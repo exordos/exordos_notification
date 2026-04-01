@@ -28,4 +28,5 @@ jobs:
 
           # Decode and write the push configuration
           echo "$PUSH_CFG" | base64 -d > genesis/genesis.push.yaml
+          cat genesis/genesis.push.yaml
           genesis push -c genesis/genesis.push.yaml -t local -f --latest
