@@ -1,2 +1,2 @@
-# Welcome to genesis_notification
+# Welcome to exordos_notification
 The Platform Notification

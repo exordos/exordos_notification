@@ -1,7 +1,7 @@
 {
     "project": {
-        "name": "genesis_notification",
-        "package_name": "genesis_notification",
+        "name": "exordos_notification",
+        "package_name": "exordos_notification",
         "description": "The Platform Notification",
         "summary": "The Platform Notification summary"
     },
