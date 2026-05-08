@@ -5,7 +5,7 @@ on:
   workflow_dispatch:
 
 env:
-  PROJECT_NAME: genesis-notification
+  PROJECT_NAME: exordos-notification
   REPO_ENDPOINT_PUT: http://10.20.0.1:8082
 
 jobs:
@@ -18,15 +18,15 @@ jobs:
       - uses: actions/checkout@v6
         with:
           fetch-depth: 30
-      - name: Build Genesis Notification
+      - name: Build Exordos Notification
         env:
               PUSH_CFG: ${{ secrets.PUSH_CFG }}
         run: |
           set -eux
 
           source ~/.profile
-          genesis build $(pwd) --inventory
+          exordos build $(pwd) --inventory
 
           # Decode and write the push configuration
-          echo "$PUSH_CFG" | base64 -d > genesis/genesis.push.yaml
-          genesis push -c genesis/genesis.push.yaml -t local -f --latest
+          echo "$PUSH_CFG" | base64 -d > exordos/exordos.push.yaml
+          exordos push -c exordos/exordos.push.yaml -t local -f --latest

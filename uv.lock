@@ -528,7 +528,7 @@ wheels = [
 ]
 
 [[package]]
-name = "genesis-notification"
+name = "exordos-notification"
 source = { editable = "." }
 dependencies = [
     { name = "bazooka" },

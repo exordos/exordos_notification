@@ -1,0 +1,14 @@
+[Unit]
+Description=Exordos Notification User API
+After=network-online.target
+
+[Service]
+TimeoutStopSec=5
+Restart=on-failure
+RestartSec=5s
+KillSignal=SIGINT
+ExecStartPre=/bin/sleep 2
+ExecStart=exordos-notification-user-api --config-file /etc/exordos_notification/exordos_notification.conf
+
+[Install]
+WantedBy=multi-user.target
