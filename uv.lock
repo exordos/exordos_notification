@@ -516,15 +516,16 @@ wheels = [
 
 [[package]]
 name = "gcl-looper"
-version = "1.0.0"
+version = "1.2.3"
 source = { registry = "https://pypi.org/simple" }
 dependencies = [
-    { name = "pbr" },
+    { name = "importlib-metadata" },
+    { name = "oslo-config" },
     { name = "setuptools" },
 ]
-sdist = { url = "https://files.pythonhosted.org/packages/f0/e8/2be31ab16a4c3e2718c8dcbe0a500c7ff63c4727695de576c6ea5cd19e6e/gcl_looper-1.0.0.tar.gz", hash = "sha256:94da2e836ea6197e76691fba61217a4e6cbc4f9b526f9de899b319a59408b012", size = 14619, upload-time = "2025-02-27T09:37:11.421Z" }
+sdist = { url = "https://files.pythonhosted.org/packages/cc/e2/30edd37629a9f5528a0a5c5372efffe6778023d5e8c82e239ecc8aaa5e53/gcl_looper-1.2.3.tar.gz", hash = "sha256:c596735cfef32a3e6337e7038b6172d3ac9735a3737713cedb6248d6843b67ec", size = 134214, upload-time = "2026-05-18T12:10:27.088Z" }
 wheels = [
-    { url = "https://files.pythonhosted.org/packages/4c/cc/e6bb9bfe74a66b0bee88ab18c5a7fc3aed385230efe39f549fd438269062/gcl_looper-1.0.0-py3-none-any.whl", hash = "sha256:0f4ed4accafef767947c716b27c5db53e35d78824e4d3422a942f04421279416", size = 18279, upload-time = "2025-02-27T09:37:09.252Z" },
+    { url = "https://files.pythonhosted.org/packages/a8/41/60c945dc7b0f416a7b4d0c8d31170f9b1484ea1cc80f8a9efdf134d9aa5b/gcl_looper-1.2.3-py3-none-any.whl", hash = "sha256:64433f5d945c6e8ec5711c81b84fd74321dc159d11fbf3d8432317954c25ec51", size = 30605, upload-time = "2026-05-18T12:10:25.253Z" },
 ]
 
 [[package]]
@@ -593,6 +594,18 @@ source = { registry = "https://pypi.org/simple" }
 sdist = { url = "https://files.pythonhosted.org/packages/6f/6d/0703ccc57f3a7233505399edb88de3cbd678da106337b9fcde432b65ed60/idna-3.11.tar.gz", hash = "sha256:795dafcc9c04ed0c1fb032c2aa73654d8e8c5023a7df64a53f39190ada629902", size = 194582, upload-time = "2025-10-12T14:55:20.501Z" }
 wheels = [
     { url = "https://files.pythonhosted.org/packages/0e/61/66938bbb5fc52dbdf84594873d5b51fb1f7c7794e9c0f5bd885f30bc507b/idna-3.11-py3-none-any.whl", hash = "sha256:771a87f49d9defaf64091e6e6fe9c18d4833f140bd19464795bc32d966ca37ea", size = 71008, upload-time = "2025-10-12T14:55:18.883Z" },
+]
+
+[[package]]
+name = "importlib-metadata"
+version = "6.11.0"
+source = { registry = "https://pypi.org/simple" }
+dependencies = [
+    { name = "zipp" },
+]
+sdist = { url = "https://files.pythonhosted.org/packages/ee/eb/58c2ab27ee628ad801f56d4017fe62afab0293116f6d0b08f1d5bd46e06f/importlib_metadata-6.11.0.tar.gz", hash = "sha256:1231cf92d825c9e03cfc4da076a16de6422c863558229ea0b22b675657463443", size = 54593, upload-time = "2023-12-03T17:33:10.693Z" }
+wheels = [
+    { url = "https://files.pythonhosted.org/packages/59/9b/ecce94952ab5ea74c31dcf9ccf78ccd484eebebef06019bf8cb579ab4519/importlib_metadata-6.11.0-py3-none-any.whl", hash = "sha256:f0afba6205ad8f8947c7d338b5342d5db2afbfd82f9cbef7879a9539cc12eb9b", size = 23427, upload-time = "2023-12-03T17:33:08.965Z" },
 ]
 
 [[package]]
@@ -1713,6 +1726,15 @@ dependencies = [
 sdist = { url = "https://files.pythonhosted.org/packages/e9/19/b90907af922e18d51c1c99a8317bed18fe7f4b0dedf43967d66a09e62afc/yretry-1.0.2.tar.gz", hash = "sha256:acf2b9234b7b9e474210171c0771cfcd552368a721f86046d877de7be5dc8d82", size = 92860, upload-time = "2026-02-24T10:07:28.25Z" }
 wheels = [
     { url = "https://files.pythonhosted.org/packages/e1/95/d58b69bbad6592128b78dd8ccb89701540e050f6770762e273af89fe428c/yretry-1.0.2-py3-none-any.whl", hash = "sha256:b55846aef40e2dca579c39fad1ee0a89f8f054badade67dd4e2d56cd8b11e36d", size = 13649, upload-time = "2026-02-24T10:07:26.576Z" },
+]
+
+[[package]]
+name = "zipp"
+version = "4.1.0"
+source = { registry = "https://pypi.org/simple" }
+sdist = { url = "https://files.pythonhosted.org/packages/b9/d8/eab98a517c14134c0b2eb4e2387bc5f457334293ec5d2dd3857ec2966802/zipp-4.1.0.tar.gz", hash = "sha256:4cb57381f544315db7688e976e922a2b18cdb513d21cc194eb42232ba2a3e602", size = 26214, upload-time = "2026-05-18T20:08:57.967Z" }
+wheels = [
+    { url = "https://files.pythonhosted.org/packages/3a/13/547360d81e6d88d58492968ffda9f9542854f11310ee556fef14260cc886/zipp-4.1.0-py3-none-any.whl", hash = "sha256:25ad4e16390cd314347dd8f1de67a2ac538ae658ed4ab9db16029c07c188e97f", size = 10238, upload-time = "2026-05-18T20:08:57.045Z" },
 ]
 
 [[package]]
