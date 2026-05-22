@@ -22,6 +22,7 @@ GLOBAL_SERVICE_NAME = "genesis_notification"
 
 class AlwaysActiveStatus(str, enum.Enum):
     ACTIVE = "ACTIVE"
+    INACTIVE = "INACTIVE"
 
 
 class EventStatus(str, enum.Enum):
@@ -29,3 +30,9 @@ class EventStatus(str, enum.Enum):
     IN_PROGRESS = "IN_PROGRESS"
     ACTIVE = "ACTIVE"
     ERROR = "ERROR"
+
+
+class PushDeliveryStatus(str, enum.Enum):
+    SUCCESS = "SUCCESS"
+    PERMANENT_FAILURE = "PERMANENT_FAILURE"
+    RETRYABLE_FAILURE = "RETRYABLE_FAILURE"

@@ -15,7 +15,9 @@
 #    under the License.
 
 import datetime
+import json
 import logging
+from dataclasses import dataclass
 from email.mime import text
 from email.mime import multipart
 import smtplib
@@ -30,8 +32,16 @@ from restalchemy.dm import types_dynamic
 from restalchemy.storage.sql import orm
 import zulip
 
-from genesis_notification.common import constants as c
+import firebase_admin
+from firebase_admin import credentials, messaging
+from firebase_admin.messaging import (
+    UnregisteredError,
+    SenderIdMismatchError,
+    ThirdPartyAuthError,
+)
 
+from genesis_notification.common import constants as c
+from genesis_notification.common.constants import PushDeliveryStatus
 
 LOG = logging.getLogger(__name__)
 
@@ -55,6 +65,338 @@ class ModelWithAlwaysActiveStatus(models.Model):
     )
 
 
+class UserDevice(
+    models.ModelWithUUID,
+    models.ModelWithProject,
+    ModelWithAlwaysActiveStatus,
+    models.ModelWithTimestamp,
+    orm.SQLStorableMixin,
+):
+    __tablename__ = "user_devices"
+
+    user_uuid = properties.property(
+        types.UUID(),
+        required=True,
+    )
+
+    app_id = properties.property(
+        types.String(min_length=1, max_length=128),
+        required=True,
+    )
+
+    provider_id = properties.property(
+        types.UUID(),
+        required=True,
+    )
+
+    fcm_token = properties.property(
+        types.String(min_length=16, max_length=512),
+        required=True,
+    )
+
+    platform = properties.property(
+        types.Enum(["android", "ios"]),
+        required=True,
+    )
+
+    app_version = properties.property(
+        types.String(max_length=64),
+        default="",
+    )
+
+    os_version = properties.property(
+        types.String(max_length=64),
+        default="",
+    )
+
+    device_model = properties.property(
+        types.String(max_length=128),
+        default="",
+    )
+
+
+class UserNotificationRoute(
+    models.ModelWithUUID,
+    models.ModelWithProject,
+    ModelWithAlwaysActiveStatus,
+    orm.SQLStorableMixin,
+):
+    __tablename__ = "user_notification_routes"
+
+    user_uuid = properties.property(
+        types.UUID(),
+        required=True,
+    )
+
+    event_type_uuid = properties.property(
+        types.UUID(),
+        required=True,
+    )
+
+    app_id = properties.property(
+        types.String(min_length=1, max_length=128),
+        required=True,
+    )
+
+    provider_id = properties.property(
+        types.UUID(),
+        required=True,
+    )
+
+
+class AppProviderMapping(
+    models.ModelWithUUID,
+    models.ModelWithProject,
+    ModelWithAlwaysActiveStatus,
+    models.ModelWithTimestamp,
+    orm.SQLStorableMixin,
+):
+    __tablename__ = "app_provider_mappings"
+
+    app_id = properties.property(
+        types.String(min_length=1, max_length=128),
+        required=True,
+    )
+
+    provider_id = properties.property(
+        types.UUID(),
+        required=True,
+    )
+
+
+class EventTypeNotificationTarget(
+    models.ModelWithUUID,
+    models.ModelWithProject,
+    ModelWithAlwaysActiveStatus,
+    models.ModelWithTimestamp,
+    orm.SQLStorableMixin,
+):
+    __tablename__ = "event_type_notification_targets"
+
+    event_type_uuid = properties.property(
+        types.UUID(),
+        required=True,
+    )
+
+    app_id = properties.property(
+        types.String(min_length=1, max_length=128),
+        required=True,
+    )
+
+    provider_id = properties.property(
+        types.UUID(),
+        required=True,
+    )
+
+
+FCM_PERMANENT_ERRORS = {
+    "UNREGISTERED",
+    "INVALID_ARGUMENT",
+    "NOT_FOUND",
+}
+
+FCM_RETRYABLE_ERRORS = {
+    "UNAVAILABLE",
+    "INTERNAL",
+    "QUOTA_EXCEEDED",
+}
+
+
+@dataclass
+class PushDeliveryResult:
+
+    user_device_uuid: str
+    token: str
+
+    status: PushDeliveryStatus
+
+    error_code: str | None = None
+    error_message: str | None = None
+
+    provider_response: dict | None = None
+
+
+@dataclass
+class PushBatchResult:
+
+    results: list[PushDeliveryResult]
+
+    def success_count(self):
+        return sum(1 for r in self.results if r.status == PushDeliveryStatus.SUCCESS)
+
+    def permanent_failures(self):
+        return [
+            r for r in self.results
+            if r.status == PushDeliveryStatus.PERMANENT_FAILURE
+        ]
+
+    def retryable_failures(self):
+        return [
+            r for r in self.results
+            if r.status == PushDeliveryStatus.RETRYABLE_FAILURE
+        ]
+
+    def total_failure(self):
+        return self.success_count() == 0
+
+
+class FCMProtocol(types_dynamic.AbstractKindModel):
+    KIND = "fcm"
+
+    project_id = properties.property(
+        types.String(),
+        required=True,
+    )
+
+    service_account_json = properties.property(
+        types.String(),
+        required=True,
+    )
+
+    def _get_firebase_app(self):
+
+        service_account_info = json.loads(self.service_account_json)
+
+        cred = credentials.Certificate(service_account_info)
+
+        app_name = f"fcm-{self.project_id}"
+
+        try:
+            app = firebase_admin.get_app(app_name)
+        except ValueError:
+            app = firebase_admin.initialize_app(
+                cred,
+                name=app_name,
+            )
+
+        return app
+
+    def _map_exception(self, exc):
+
+        if isinstance(exc, (
+            UnregisteredError,
+            SenderIdMismatchError,
+        )):
+            return PushDeliveryStatus.PERMANENT_FAILURE
+
+        if isinstance(exc, (
+            ThirdPartyAuthError,
+        )):
+            return PushDeliveryStatus.RETRYABLE_FAILURE
+
+        return PushDeliveryStatus.RETRYABLE_FAILURE
+
+    def _send_batch(self, user_devices, content):
+
+        app = self._get_firebase_app()
+
+        tokens = [i.fcm_token for i in user_devices]
+        device_map = {
+            i.fcm_token: i.uuid
+            for i in user_devices
+        }
+
+        results = []
+
+        for i in range(0, len(tokens), 500):
+
+            chunk = tokens[i:i + 500]
+
+            message = messaging.MulticastMessage(
+                tokens=chunk,
+                notification=messaging.Notification(
+                    title=content.title,
+                    body=content.body,
+                ),
+                data=content.data or {},
+            )
+
+            # In firebase-admin 6.x+, send_multicast was replaced with send_each_for_multicast
+            response = messaging.send_each_for_multicast(message, app=app)
+
+            for idx, resp in enumerate(response.responses):
+
+                token = chunk[idx]
+                user_device_uuid = device_map[token]
+
+                if resp.success:
+
+                    results.append(
+                        PushDeliveryResult(
+                            user_device_uuid=user_device_uuid,
+                            token=token,
+                            status=PushDeliveryStatus.SUCCESS,
+                            provider_response={"message_id": resp.message_id},
+                        )
+                    )
+
+                else:
+                    status = self._map_exception(resp.exception)
+
+                    results.append(
+                        PushDeliveryResult(
+                            user_device_uuid=user_device_uuid,
+                            token=token,
+                            status=status,
+                            error_code=type(resp.exception).__name__,
+                            error_message=str(resp.exception),
+                        )
+                    )
+
+        return PushBatchResult(results)
+
+    def _build_payload(self, token, content):
+
+        return {
+            "message": {
+                "token": token,
+                "notification": {
+                    "title": content.title,
+                    "body": content.body,
+                },
+                "data": content.data or {},
+            }
+        }
+
+    def _process_batch_result(self, batch_result):
+
+        for r in batch_result.permanent_failures():
+
+            device = UserDevice.objects.get_one(
+                filters={"uuid": r.user_device_uuid}
+            )
+
+            if device:
+                device.status = c.AlwaysActiveStatus.INACTIVE.value
+                device.save()
+
+    def send(self, content, user_context, routing_context=None):
+
+        if not routing_context:
+            raise RuntimeError("Push routing context is required")
+
+        provider_id = routing_context["provider_id"]
+        user_devices = UserDevice.objects.get_all(
+            filters={
+                "project_id": filters.EQ(routing_context["project_id"]),
+                "user_uuid": filters.EQ(routing_context["user_uuid"]),
+                "app_id": filters.EQ(routing_context["app_id"]),
+                "provider_id": filters.EQ(provider_id),
+                "status": filters.EQ(c.AlwaysActiveStatus.ACTIVE.value),
+            }
+        )
+
+        if not user_devices:
+            return
+
+        batch_result = self._send_batch(user_devices, content)
+
+        self._process_batch_result(batch_result)
+
+        if batch_result.total_failure():
+            raise RuntimeError("Push delivery totally failed")
+
+
 class SimpleSmtpProtocol(types_dynamic.AbstractKindModel):
     KIND = "SimpleSMTP"
 
@@ -71,10 +413,17 @@ class SimpleSmtpProtocol(types_dynamic.AbstractKindModel):
         required=True,
     )
 
+    @staticmethod
+    def _resolve_recipient(content, user_context):
+        recipient = getattr(content, "recipient", None)
+        if recipient:
+            return recipient
+        return user_context["user"]["email"]
+
     def _build_message(self, content, user_context):
         msg = multipart.MIMEMultipart("alternative")
         msg["From"] = self.noreply_email_address
-        msg["To"] = user_context["user"]["email"]
+        msg["To"] = self._resolve_recipient(content, user_context)
         msg["Subject"] = content.title
         for body in content.bodies:
             msg.attach(text.MIMEText(body, "html", "utf-8"))
@@ -83,13 +432,13 @@ class SimpleSmtpProtocol(types_dynamic.AbstractKindModel):
     def _authenticate(self, smtp):
         return smtp
 
-    def send(self, content, user_context):
+    def send(self, content, user_context, routing_context=None):
         msg = self._build_message(content, user_context)
         with smtplib.SMTP(self.host, self.port) as smtp:
             smtp = self._authenticate(smtp)
             return smtp.sendmail(
                 from_addr=self.noreply_email_address,
-                to_addrs=user_context["user"]["email"],
+                to_addrs=self._resolve_recipient(content, user_context),
                 msg=msg.as_string(),
             )
 
@@ -130,7 +479,7 @@ class ZulipProtocol(types_dynamic.AbstractKindModel):
         required=True,
     )
 
-    def send(self, content, user_context):
+    def send(self, content, user_context, routing_context=None):
         client = zulip.Client(
             site=self.endpoint,
             email=self.email_address,
@@ -171,14 +520,16 @@ class Provider(
             types_dynamic.KindModelType(SimpleSmtpProtocol),
             types_dynamic.KindModelType(StartTlsSmtpProtocol),
             types_dynamic.KindModelType(ZulipProtocol),
+            types_dynamic.KindModelType(FCMProtocol),
         ),
         required=True,
     )
 
-    def send(self, content, user_context):
+    def send(self, content, user_context, routing_context=None):
         return self.protocol.send(
             content=content,
             user_context=user_context,
+            routing_context=routing_context,
         )
 
 
@@ -201,6 +552,10 @@ class AbstractContent(types_dynamic.AbstractKindModel):
 class RenderedEmailContent(AbstractContent):
     KIND = "rendered_email"
 
+    recipient = properties.property(
+        types.AllowNone(types.Email()),
+        default=None,
+    )
     title = properties.property(
         types.String(max_length=256),
         default="",
@@ -214,8 +569,18 @@ class RenderedEmailContent(AbstractContent):
 class EmailContent(RenderedEmailContent):
     KIND = "email"
 
+    recipient = properties.property(
+        types.AllowNone(types.String(max_length=512)),
+        default="{{ user.email }}",
+    )
+
     def render(self, params):
+        rendered_recipient = (
+            jinja2.Template(self.recipient).render(**params)
+            if self.recipient else None
+        )
         return RenderedEmailContent(
+            recipient=rendered_recipient,
             title=jinja2.Template(self.title).render(**params),
             bodies=[jinja2.Template(body).render(**params) for body in self.bodies],
         )
@@ -303,6 +668,28 @@ ZULIP_MESSAGE_TYPE_MAP = {
 }
 
 
+class RenderedPushContent(AbstractContent):
+    KIND = "rendered_push"
+
+    title = properties.property(types.String(), default="{{ title }}")
+    body = properties.property(types.String(), default="{{ body }}")
+    data = properties.property(types.Dict(), default=dict)
+
+
+class PushContent(RenderedPushContent):
+    KIND = "push"
+
+    def render(self, params):
+        return RenderedPushContent(
+            title=jinja2.Template(self.title).render(**params),
+            body=jinja2.Template(self.body).render(**params),
+            data={
+                k: jinja2.Template(v).render(**params) if isinstance(v, str) else v
+                for k, v in self.data.items()
+            },
+        )
+
+
 class Template(
     models.ModelWithUUID,
     models.ModelWithRequiredNameDesc,
@@ -318,6 +705,7 @@ class Template(
             types_dynamic.KindModelType(EmailContent),
             types_dynamic.KindModelType(ZulipStreamMessageContent),
             types_dynamic.KindModelType(ZulipDirectMessageContent),
+            types_dynamic.KindModelType(PushContent),
         ),
         required=True,
     )
@@ -448,6 +836,11 @@ class Event(
 ):
     __tablename__ = "events"
 
+    app_id = properties.property(
+        types.String(min_length=1, max_length=128),
+        required=True,
+    )
+
     exchange = properties.property(
         types_dynamic.KindModelSelectorType(
             types_dynamic.KindModelType(UserExchange),
@@ -487,6 +880,9 @@ class Event(
                 RenderedEvent(
                     content=rendered_content,
                     event_id=self.uuid,
+                    project_id=self.project_id,
+                    app_id=self.app_id,
+                    event_type_uuid=self.event_type.uuid,
                     provider=template.provider,
                     user_context=context,
                     status=StatusMixin.STATUS.IN_PROGRESS.value,
@@ -498,6 +894,7 @@ class Event(
 
 class RenderedEvent(
     models.ModelWithUUID,
+    models.ModelWithProject,
     models.ModelWithTimestamp,
     StatusMixin,
     orm.SQLStorableMixin,
@@ -509,10 +906,19 @@ class RenderedEvent(
             types_dynamic.KindModelType(RenderedEmailContent),
             types_dynamic.KindModelType(RenderedStreamMessageContent),
             types_dynamic.KindModelType(RenderedDirectMessageContent),
+            types_dynamic.KindModelType(RenderedPushContent),
         ),
         required=True,
     )
     event_id = properties.property(
+        types.UUID(),
+        required=True,
+    )
+    app_id = properties.property(
+        types.String(min_length=1, max_length=128),
+        required=True,
+    )
+    event_type_uuid = properties.property(
         types.UUID(),
         required=True,
     )
@@ -526,12 +932,93 @@ class RenderedEvent(
         required=True,
     )
 
+    def _get_push_user_uuid(self):
+        return self.user_context["user"]["uuid"]
+
+    def _resolve_push_route(self):
+        return UserNotificationRoute.objects.get_one_or_none(
+            filters={
+                "project_id": self.project_id,
+                "user_uuid": self._get_push_user_uuid(),
+                "event_type_uuid": self.event_type_uuid,
+                "app_id": self.app_id,
+                "status": c.AlwaysActiveStatus.ACTIVE.value,
+            }
+        )
+
+    def _get_active_provider(self, provider_id):
+        return Provider.objects.get_one_or_none(
+            filters={
+                "uuid": provider_id,
+                "status": c.AlwaysActiveStatus.ACTIVE.value,
+            }
+        )
+
+    def _validate_push_route(self, route):
+        provider = self._get_active_provider(route.provider_id)
+        if not provider:
+            raise RuntimeError("Push route provider is inactive")
+        if provider.protocol.KIND != FCMProtocol.KIND:
+            raise RuntimeError("Push route provider must use FCM protocol")
+
+        mapping = AppProviderMapping.objects.get_one_or_none(
+            filters={
+                "project_id": self.project_id,
+                "app_id": self.app_id,
+                "provider_id": route.provider_id,
+                "status": c.AlwaysActiveStatus.ACTIVE.value,
+            }
+        )
+        if not mapping:
+            raise RuntimeError("Push route provider is not allowed for app_id")
+
+        target = EventTypeNotificationTarget.objects.get_one_or_none(
+            filters={
+                "project_id": self.project_id,
+                "event_type_uuid": self.event_type_uuid,
+                "app_id": self.app_id,
+                "provider_id": route.provider_id,
+                "status": c.AlwaysActiveStatus.ACTIVE.value,
+            }
+        )
+        if not target:
+            raise RuntimeError("Push route provider is not allowed for event type")
+
+        return provider
+
+    def _send_push(self):
+        route = self._resolve_push_route()
+        if not route:
+            LOG.info(
+                "No active push route for event %s, user %s, event type %s",
+                self.event_id,
+                self._get_push_user_uuid(),
+                self.event_type_uuid,
+            )
+            return
+
+        provider = self._validate_push_route(route)
+        return provider.send(
+            content=self.content,
+            user_context=self.user_context,
+            routing_context={
+                "project_id": str(self.project_id),
+                "user_uuid": self._get_push_user_uuid(),
+                "event_type_uuid": str(self.event_type_uuid),
+                "app_id": self.app_id,
+                "provider_id": route.provider_id,
+            },
+        )
+
     def send(self):
         try:
-            self.provider.send(
-                content=self.content,
-                user_context=self.user_context,
-            )
+            if self.content.KIND == RenderedPushContent.KIND:
+                self._send_push()
+            else:
+                self.provider.send(
+                    content=self.content,
+                    user_context=self.user_context,
+                )
         except Exception as e:
             LOG.exception("Failed to send event")
             self.set_error_status(e)

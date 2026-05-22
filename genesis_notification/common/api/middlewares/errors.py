@@ -15,6 +15,18 @@
 
 from gcl_iam import middlewares
 
+from genesis_notification.common import exceptions as notification_exc
+
 
 class ErrorsHandlerMiddleware(middlewares.ErrorsHandlerMiddleware):
-    pass
+    def _construct_error_response(self, req, e):
+        if isinstance(e, notification_exc.NotificationAPIError):
+            return req.ResponseClass(
+                status=e.status_code,
+                json={
+                    "error": e.error_code,
+                    "error_description": e.message,
+                },
+            )
+
+        return super()._construct_error_response(req, e)
