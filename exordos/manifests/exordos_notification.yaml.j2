@@ -1,0 +1,199 @@
+#    Copyright 2026 Genesis Corporation.
+#
+#    All Rights Reserved.
+#
+#    Licensed under the Apache License, Version 2.0 (the "License"); you may
+#    not use this file except in compliance with the License. You may obtain
+#    a copy of the License at
+#
+#         http://www.apache.org/licenses/LICENSE-2.0
+#
+#    Unless required by applicable law or agreed to in writing, software
+#    distributed under the License is distributed on an "AS IS" BASIS, WITHOUT
+#    WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied. See the
+#    License for the specific language governing permissions and limitations
+#    under the License.
+
+name: "exordos_notification"
+description: "Exordos notification element"
+schema_version: 1
+version: "{{ version }}"
+api_version: "v1"
+
+requirements:
+  core:
+    from_version: "0.0.0"
+  dbaas:
+    from_version: "2.2.4"
+
+resources:
+
+  # IAM
+  $core.iam.organizations:
+    notification_organization:
+      name: "Notification organization"
+      description: "Notification organization"
+
+  $core.iam.permissions:
+    provider_create:
+      name: "exordos_notification.provider.create"
+    provider_read:
+      name: "exordos_notification.provider.read"
+    provider_update:
+      name: "exordos_notification.provider.update"
+    provider_delete:
+      name: "exordos_notification.provider.delete"
+    template_create:
+      name: "exordos_notification.template.create"
+    template_read:
+      name: "exordos_notification.template.read"
+    template_update:
+      name: "exordos_notification.template.update"
+    template_delete:
+      name: "exordos_notification.template.delete"
+    event_type_create:
+      name: "exordos_notification.event_type.create"
+    event_type_read:
+      name: "exordos_notification.event_type.read"
+    event_type_update:
+      name: "exordos_notification.event_type.update"
+    event_type_delete:
+      name: "exordos_notification.event_type.delete"
+    event_create:
+      name: "exordos_notification.event.create"
+    event_read:
+      name: "exordos_notification.event.read"
+    event_update:
+      name: "exordos_notification.event.update"
+    event_delete:
+      name: "exordos_notification.event.delete"
+
+  $core.iam.permissionbinding:
+    iam_user_read_all_binding:
+      role: $core.iam.roles.$notification_service:uuid
+      # iam.user.read_all
+      permission: "f64bbebd-c389-53b1-bed2-c725dc7dd1e8"
+      project_id: null
+
+  $core.iam.roles:
+    notification_service:
+      name: "notification_service"
+      description: "Notification service role. Grants access to read user data from IAM."
+      project_id: null
+
+  $core.iam.users:
+    notification_user:
+      uuid: 362df68b-c1b6-47bb-95e8-44fceed037d9
+      username: notification
+      first_name: "Notification system user"
+      last_name: "Notification system user"
+      email: "noreply+notification@genesis-core.tech"
+      password: $core.secret.passwords.$notification_user_password:value
+
+  $core.iam.rolebinding:
+    notification_role_binding:
+      role: $core.iam.roles.$notification_service:uuid
+      user: 362df68b-c1b6-47bb-95e8-44fceed037d9
+      project: null
+
+  # DB
+  $dbaas.types.postgres.instances:
+    notification_cluster_pg:
+      name: "notification-pg-cluster"
+      nodes_number: 1
+      project_id: "12345678-c625-4fee-81d5-f691897b8142"
+      cpu: 1
+      ram: 2048
+      disk_size: 20
+      version: $exordos_notification.imports.$pg18:uuid
+
+  $dbaas.types.postgres.instances.$notification_cluster_pg.users:
+    notification_db_user:
+      project_id: "12345678-c625-4fee-81d5-f691897b8142"
+      name: notification_db_user
+      password: $core.secret.passwords.$notification_db_password:value
+      instance: $dbaas.types.postgres.instances.$notification_cluster_pg:uuid
+
+  $dbaas.types.postgres.instances.$notification_cluster_pg.databases:
+    notification_db:
+      project_id: "12345678-c625-4fee-81d5-f691897b8142"
+      name: notification_db
+      owner: $dbaas.types.postgres.instances.$notification_cluster_pg.users.$notification_db_user:uuid
+      instance: $dbaas.types.postgres.instances.$notification_cluster_pg:uuid
+
+  # Secret
+  $core.secret.passwords:
+    notification_db_password:
+      name: notification_db_password
+      description: "Notification DB password"
+      constructor:
+        kind: plain
+      method: AUTO_HEX
+
+    notification_user_password:
+      name: notification_user_password
+      description: "Notification system user password"
+      project_id: "12345678-c625-4fee-81d5-f691897b8142"
+      constructor:
+        kind: plain
+      method: AUTO_HEX
+
+  # Compute
+  $core.compute.nodes:
+    notification_cp:
+      name: notification-cp
+      project_id: "12345678-c625-4fee-81d5-f691897b8142"
+      cores: 1
+      ram: 1024
+      disk_spec:
+        kind: "disks"
+        disks:
+          - size: 10
+            image: "{{ repository | default('https://repository.genesis-core.tech/exordos-elements') }}/exordos_notification/{{ version }}/images/exordos-notification.raw.gz"
+            label: root
+
+  # Config
+  $core.config.configs:
+    notification_cp_config:
+      project_id: "12345678-c625-4fee-81d5-f691897b8142"
+      path: /etc/exordos_init.txt
+      target:
+        kind: node
+        node: $core.compute.nodes.$notification_cp:uuid
+      body:
+        kind: text
+        content: |
+          f"
+          IAM_USER_NAME={$core.iam.users.$notification_user:username}
+          IAM_USER_PASS={$core.secret.passwords.$notification_user_password:value}
+          GC_PG_USER={$dbaas.types.postgres.instances.$notification_cluster_pg.users.$notification_db_user:name}
+          GC_PG_PASS={$core.secret.passwords.$notification_db_password:value}
+          GC_PG_DB={$dbaas.types.postgres.instances.$notification_cluster_pg.databases.$notification_db:name}
+          GC_PG_ENDPOINTS={$dbaas.types.postgres.instances.$notification_cluster_pg:join(ipsv4)}
+          GC_HS256_JWKS_ENCRYPTION_KEY={$exordos_notification.imports.$var_hs256_jwks_encryption_key:value}
+          "
+
+  # DNS
+  $exordos_notification.imports.$core_local_domain.records:
+    notification_cp:
+      domain: "$exordos_notification.imports.$core_local_domain:uuid"
+      project_id: "12345678-c625-4fee-81d5-f691897b8142"
+      type: "A"
+      record:
+        kind: "A"
+        name: "notification-cp"
+        address: "$core.compute.nodes.$notification_cp:default_network:ipv4"
+
+imports:
+  pg18:
+    element: "$dbaas"
+    kind: "resource"
+    link: "$dbaas.types.postgres.versions.$pg18"
+  core_local_domain:
+    element: "$core"
+    kind: "resource"
+    link: "$core.dns.domains.$local_domain"
+  var_hs256_jwks_encryption_key:
+    element: "$core"
+    kind: "resource"
+    link: "$core.vs.variables.$hs256_jwks_encryption_key"

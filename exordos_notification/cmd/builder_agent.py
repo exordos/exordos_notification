@@ -32,13 +32,19 @@ DOMAIN_IAM_CLIENT = "iam_client"
 
 iam_client_cli_opts = [
     cfg.StrOpt(
-        "token",
+        "username",
         required=True,
-        help="IAM token",
+        help="IAM username",
+    ),
+    cfg.StrOpt(
+        "password",
+        required=True,
+        help="IAM password",
+        secret=True,
     ),
     cfg.URIOpt(
         "endpoint",
-        default="http://127.0.0.1:11010/v1/",
+        default="http://core.local.genesis-core.tech:11010",
         help="IAM endpoint",
     ),
     cfg.IntOpt(
@@ -64,7 +70,8 @@ def main():
     engines.engine_factory.configure_postgresql_factory(CONF)
     iam_client = iam.IAMClient(
         endpoint=CONF[DOMAIN_IAM_CLIENT].endpoint,
-        token=CONF[DOMAIN_IAM_CLIENT].token,
+        username=CONF[DOMAIN_IAM_CLIENT].username,
+        password=CONF[DOMAIN_IAM_CLIENT].password,
         timeout=CONF[DOMAIN_IAM_CLIENT].timeout,
     )
 

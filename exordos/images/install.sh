@@ -24,10 +24,7 @@ set -o pipefail
 GC_PATH="/opt/exordos_notification"
 GC_CFG_DIR=/etc/exordos_notification
 VENV_PATH="$GC_PATH/.venv"
-
-GC_PG_USER="exordos_notification"
-GC_PG_PASS="pass"
-GC_PG_DB="exordos_notification"
+BOOTSTRAP_PATH="/var/lib/exordos/bootstrap/scripts"
 
 SYSTEMD_SERVICE_DIR=/etc/systemd/system/
 
@@ -35,27 +32,22 @@ SYSTEMD_SERVICE_DIR=/etc/systemd/system/
 sudo apt update
 sudo apt dist-upgrade -y
 sudo apt install -y \
-    postgresql \
-    libev-dev
+    libev-dev \
+    j2cli \
+    postgresql-client-18 \
+    yq
+
 curl -LsSf https://releases.astral.sh/github/uv/releases/download/0.10.12/uv-installer.sh | sh
 source "$HOME"/.local/bin/env
 
-# Default creds for genesis notification services
-sudo -u postgres psql -c "CREATE ROLE $GC_PG_USER WITH LOGIN PASSWORD '$GC_PG_PASS';"
-sudo -u postgres psql -c "CREATE DATABASE $GC_PG_USER OWNER $GC_PG_DB;"
-
-# Install genesis core
+# Install exordos notification
 sudo mkdir -p $GC_CFG_DIR
-sudo cp "$GC_PATH/etc/exordos_notification/exordos_notification.conf" $GC_CFG_DIR/
+sudo cp "$GC_PATH/etc/exordos_notification/exordos_notification.conf.j2" $GC_CFG_DIR/
 sudo cp "$GC_PATH/etc/exordos_notification/logging.yaml" $GC_CFG_DIR/
+sudo cp "$GC_PATH/exordos/images/bootstrap.sh" $BOOTSTRAP_PATH/0100-notification-bootstrap.sh
 
 cd "$GC_PATH"
 uv sync
-source "$GC_PATH"/.venv/bin/activate
-
-# Apply migrations
-ra-apply-migration --config-dir "$GC_PATH/etc/exordos_notification/" --path "$GC_PATH/migrations"
-deactivate
 
 # Create links to venv
 sudo ln -sf "$VENV_PATH/bin/exordos-notification-mail-agent" "/usr/bin/exordos-notification-mail-agent"
@@ -66,12 +58,6 @@ sudo ln -sf "$VENV_PATH/bin/exordos-notification-user-api" "/usr/bin/exordos-not
 sudo cp "$GC_PATH/etc/systemd/exordos-notification-mail-agent.service" $SYSTEMD_SERVICE_DIR
 sudo cp "$GC_PATH/etc/systemd/exordos-notification-builder-agent.service" $SYSTEMD_SERVICE_DIR
 sudo cp "$GC_PATH/etc/systemd/exordos-notification-user-api.service" $SYSTEMD_SERVICE_DIR
-
-# Enable genesis notification services
-sudo systemctl enable \
-    exordos-notification-mail-agent \
-    exordos-notification-builder-agent \
-    exordos-notification-user-api
 
 
 cat <<EOT | sudo tee /etc/motd
