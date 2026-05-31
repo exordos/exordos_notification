@@ -1,0 +1,33 @@
+# Example site configuration manifest for exordos_notification.
+#
+# Copy to site_config.yaml.j2, fill in your values, and install:
+#   exordos em elements install output/manifests/site_config.yaml
+#
+# This manifest sets per-installation VS variables that notification
+# reads at runtime. Install it once after the notification element is
+# active; reinstalling the notification element will NOT overwrite these.
+
+name: "notification_site_config"
+description: "Site-specific configuration for exordos_notification"
+schema_version: 1
+version: "1.0.0"
+api_version: "v1"
+
+requirements:
+  exordos_notification:
+    from_version: "0.0.0"
+
+resources:
+
+  $core.vs.values:
+    noreply_address_value:
+      name: "notification_noreply_address"
+      project_id: "12345678-c625-4fee-81d5-f691897b8142"
+      value: "noreply@mail.example.com"
+      variable: $notification_site_config.imports.$noreply_address_var:uuid
+
+imports:
+  noreply_address_var:
+    element: "$exordos_notification"
+    kind: "resource"
+    link: "$core.vs.variables.$noreply_address"

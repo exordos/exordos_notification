@@ -42,7 +42,9 @@ source "$HOME"/.local/bin/env
 
 # Install exordos notification
 sudo mkdir -p $GC_CFG_DIR
+sudo mkdir -p /var/lib/exordos/exordos_notification/core_agent
 sudo cp "$GC_PATH/etc/exordos_notification/exordos_notification.conf.j2" $GC_CFG_DIR/
+sudo cp "$GC_PATH/etc/exordos_notification/core_agent.conf.j2" $GC_CFG_DIR/
 sudo cp "$GC_PATH/etc/exordos_notification/logging.yaml" $GC_CFG_DIR/
 sudo cp "$GC_PATH/exordos/images/bootstrap.sh" $BOOTSTRAP_PATH/0100-notification-bootstrap.sh
 
@@ -53,11 +55,13 @@ uv sync
 sudo ln -sf "$VENV_PATH/bin/exordos-notification-mail-agent" "/usr/bin/exordos-notification-mail-agent"
 sudo ln -sf "$VENV_PATH/bin/exordos-notification-builder-agent" "/usr/bin/exordos-notification-builder-agent"
 sudo ln -sf "$VENV_PATH/bin/exordos-notification-user-api" "/usr/bin/exordos-notification-user-api"
+sudo ln -sf "$VENV_PATH/bin/exordos-universal-agent-db-back" "/usr/bin/exordos-universal-agent-db-back"
 
 # Install Systemd service files
 sudo cp "$GC_PATH/etc/systemd/exordos-notification-mail-agent.service" $SYSTEMD_SERVICE_DIR
 sudo cp "$GC_PATH/etc/systemd/exordos-notification-builder-agent.service" $SYSTEMD_SERVICE_DIR
 sudo cp "$GC_PATH/etc/systemd/exordos-notification-user-api.service" $SYSTEMD_SERVICE_DIR
+sudo cp "$GC_PATH/etc/systemd/exordos-notification-core-agent.service" $SYSTEMD_SERVICE_DIR
 
 
 cat <<EOT | sudo tee /etc/motd

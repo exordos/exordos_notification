@@ -19,8 +19,10 @@ import logging
 from email.mime import text
 from email.mime import multipart
 import smtplib
+import ssl
 
 import jinja2
+from gcl_sdk.agents.universal.dm import models as ua_models
 from restalchemy.dm import filters
 from restalchemy.dm import models
 from restalchemy.dm import properties
@@ -98,17 +100,25 @@ class StartTlsSmtpProtocol(SimpleSmtpProtocol):
     KIND = "StartTlsSMTP"
 
     user = properties.property(
-        types.Email(),
+        types.String(max_length=128, min_length=1),
         required=True,
     )
     password = properties.property(
-        types.String(max_length=128, min_length=1),
+        types.String(max_length=256, min_length=1),
         required=True,
+    )
+    skip_tls_verify = properties.property(
+        types.Boolean(),
+        default=False,
     )
 
     def _authenticate(self, smtp):
         smtp.ehlo()
-        smtp.starttls()
+        ctx = ssl.create_default_context()
+        if self.skip_tls_verify:
+            ctx.check_hostname = False
+            ctx.verify_mode = ssl.CERT_NONE
+        smtp.starttls(context=ctx)
         smtp.ehlo()
         smtp.login(self.user, self.password)
         return smtp
@@ -163,6 +173,7 @@ class Provider(
     models.ModelWithProject,
     models.ModelWithTimestamp,
     orm.SQLStorableMixin,
+    ua_models.TargetResourceMixin,
 ):
     __tablename__ = "providers"
 
@@ -189,6 +200,7 @@ class EventType(
     models.ModelWithProject,
     models.ModelWithTimestamp,
     orm.SQLStorableMixin,
+    ua_models.TargetResourceMixin,
 ):
     __tablename__ = "event_types"
 
@@ -310,6 +322,7 @@ class Template(
     models.ModelWithProject,
     models.ModelWithTimestamp,
     orm.SQLStorableMixin,
+    ua_models.TargetResourceMixin,
 ):
     __tablename__ = "templates"
 

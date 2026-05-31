@@ -1,0 +1,21 @@
+[db]
+connection_url = postgresql://{{ GC_PG_USER }}:{{ GC_PG_PASS }}@{{ GC_PG_ENDPOINTS }}:5432/{{ GC_PG_DB }}
+connection_pool_max_size = 4
+
+[agent]
+uuid5_name = core_agent
+payload_path = /var/lib/exordos/exordos_notification/core_agent/payload.json
+target_fields_path = /var/lib/exordos/exordos_notification/core_agent/target_fields.json
+orch_client = http
+orch_endpoint = http://core.local.genesis-core.tech:11011
+status_endpoint = http://core.local.genesis-core.tech:11012
+
+[models]
+em_exordos_notification_types_email_providers = exordos_notification.dm.models:Provider
+em_exordos_notification_types_email_event_types = exordos_notification.dm.models:EventType
+em_exordos_notification_types_email_templates = exordos_notification.dm.models:Template
+
+[filters]
+em_exordos_notification_types_email_providers = project_id:12345678-c625-4fee-81d5-f691897b8142
+em_exordos_notification_types_email_event_types = project_id:12345678-c625-4fee-81d5-f691897b8142
+em_exordos_notification_types_email_templates = project_id:12345678-c625-4fee-81d5-f691897b8142
