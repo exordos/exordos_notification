@@ -25,6 +25,8 @@ requirements:
     from_version: "0.0.0"
   dbaas:
     from_version: "2.2.4"
+  mailer:
+    from_version: "0.0.0"
 
 resources:
 
@@ -73,6 +75,11 @@ resources:
       role: $core.iam.roles.$notification_service:uuid
       # iam.user.read_all
       permission: "f64bbebd-c389-53b1-bed2-c725dc7dd1e8"
+      project_id: null
+    iam_user_list_binding:
+      role: $core.iam.roles.$notification_service:uuid
+      # iam.user.list
+      permission: "a8a7eea2-7514-53ac-a408-8b1235352310"
       project_id: null
 
   $core.iam.roles:
@@ -171,7 +178,26 @@ resources:
           GC_PG_DB={$dbaas.types.postgres.instances.$notification_cluster_pg.databases.$notification_db:name}
           GC_PG_ENDPOINTS={$dbaas.types.postgres.instances.$notification_cluster_pg:join(ipsv4)}
           GC_HS256_JWKS_ENCRYPTION_KEY={$exordos_notification.imports.$var_hs256_jwks_encryption_key:value}
+          SITE_ENDPOINT={{ site_endpoint | default('http://localhost') }}
           "
+
+  $core.vs.variables:
+    noreply_address:
+      name: "notification_noreply_address"
+      project_id: "12345678-c625-4fee-81d5-f691897b8142"
+      setter:
+        kind: selector
+        selector_strategy: latest
+
+  # Register notification endpoint in core VS so that IAM can push events to us.
+  # VsBackedEventClient in core reads this variable (cached 30s) and sends
+  # RegistrationEventPayload (with confirmation_code) directly to our /v1/events API.
+  $core.vs.values:
+    notification_endpoint_value:
+      name: "notification_endpoint"
+      project_id: "12345678-c625-4fee-81d5-f691897b8142"
+      value: "http://notification-cp.local.genesis-core.tech:8080"
+      variable: $exordos_notification.imports.$notification_endpoint_var:uuid
 
   # DNS
   $exordos_notification.imports.$core_local_domain.records:
@@ -183,6 +209,64 @@ resources:
         kind: "A"
         name: "notification-cp"
         address: "$core.compute.nodes.$notification_cp:default_network:ipv4"
+
+  # Notification EM resources — synced by EMSyncAgent into notification DB
+  $exordos_notification.types.email.providers:
+    smtp_via_mailer:
+      project_id: "12345678-c625-4fee-81d5-f691897b8142"
+      name: "smtp_via_mailer"
+      description: "SMTP via local mailer (exim4)"
+      status: "ACTIVE"
+      protocol:
+        kind: StartTlsSMTP
+        host: "mailer.local.genesis-core.tech"
+        port: 587
+        noreply_email_address: f"{$core.vs.variables.$noreply_address:value}"
+        user: "smtp"
+        password: $exordos_notification.imports.$smtp_password:value
+        skip_tls_verify: true
+
+  $exordos_notification.types.email.event_types:
+    email_confirmation:
+      uuid: "e0fe8070-e59c-4347-8df1-b3f638c06565"
+      project_id: "12345678-c625-4fee-81d5-f691897b8142"
+      name: "email_confirmation"
+      description: "User email address confirmation"
+      status: "ACTIVE"
+
+  $exordos_notification.types.email.templates:
+    email_confirmation_template:
+      project_id: "12345678-c625-4fee-81d5-f691897b8142"
+      name: "email_confirmation"
+      description: "Email confirmation letter"
+      status: "ACTIVE"
+      provider: $exordos_notification.types.email.providers.$smtp_via_mailer:uuid
+      event_type: $exordos_notification.types.email.event_types.$email_confirmation:uuid
+      is_default: true
+      params: {}
+      content:
+        kind: email
+        title: "Confirm your email address"
+        bodies:
+          - |
+            {% raw %}<html>
+            <body style="font-family: Arial, sans-serif; max-width: 600px; margin: 0 auto;">
+            <h2>Welcome to Exordos!</h2>
+            <p>Hello <strong>{{ username }}</strong>,</p>
+            <p>Your account has been created. Please confirm your email address by clicking the button below.</p>
+            <p style="text-align: center; margin: 32px 0;">
+              <a href="{{ site_endpoint }}/confirm-email?user_id={{ uuid }}&code={{ confirmation_code }}"
+                 style="background: #1a1a1a; color: #ffffff; padding: 14px 28px; text-decoration: none; border-radius: 6px; font-size: 16px; display: inline-block;">
+                Confirm email address
+              </a>
+            </p>
+            <p>Or copy the link manually:</p>
+            <p style="word-break: break-all; background: #f4f4f4; padding: 10px; font-size: 12px;">
+              {{ site_endpoint }}/confirm-email?user_id={{ uuid }}&code={{ confirmation_code }}
+            </p>
+            <p style="color: #666; font-size: 12px;">The link is valid for 1 hour. This message was sent automatically. Do not reply.</p>
+            </body>
+            </html>{% endraw %}
 
 imports:
   pg18:
@@ -197,3 +281,11 @@ imports:
     element: "$core"
     kind: "resource"
     link: "$core.vs.variables.$hs256_jwks_encryption_key"
+  smtp_password:
+    element: "$mailer"
+    kind: "resource"
+    link: "$core.secret.passwords.$smtp_password"
+  notification_endpoint_var:
+    element: "$core"
+    kind: "resource"
+    link: "$core.vs.variables.$notification_endpoint"

@@ -45,8 +45,14 @@ while [ -z "$GC_PG_ENDPOINTS" ]; do
     export GC_PG_ENDPOINTS="${GC_PG_ENDPOINTS:-}"
 done
 
+CORE_AGENT_CONFIG="/etc/exordos_notification/core_agent.conf"
+
 if [[ ! -f $SERVICE_CONFIG ]]; then
     try_generate_config "$SERVICE_CONFIG"
+fi
+
+if [[ ! -f $CORE_AGENT_CONFIG ]]; then
+    try_generate_config "$CORE_AGENT_CONFIG"
 fi
 
 # Wait for database to be available
@@ -78,6 +84,7 @@ deactivate
 sudo systemctl enable --now \
     exordos-notification-mail-agent \
     exordos-notification-builder-agent \
-    exordos-notification-user-api
+    exordos-notification-user-api \
+    exordos-notification-core-agent
 
 echo "Bootstrap completed successfully."
