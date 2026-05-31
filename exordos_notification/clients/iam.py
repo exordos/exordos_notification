@@ -1,4 +1,4 @@
-#    Copyright 2025 Genesis Corporation.
+#    Copyright 2026 Genesis Corporation.
 #
 #    All Rights Reserved.
 #
@@ -14,27 +14,40 @@
 #    License for the specific language governing permissions and limitations
 #    under the License.
 
-from bazooka import common
-from bazooka import client
+import uuid as sys_uuid
+
+import bazooka
+from gcl_sdk.clients.http import base
 
 
-class IAMClient(common.RESTClientMixIn):
-    USER_PATH = "iam/users"
+class IAMClient(base.CollectionBaseClient):
+    """IAM client using CoreIamAuthenticator for auto-refresh tokens."""
 
-    def __init__(self, endpoint, token, timeout=5):
-        super().__init__()
-        self._client = client.Client(default_timeout=timeout)
-        self._endpoint = endpoint
-        self._token = token
+    USER_PATH = "v1/iam/users/"
 
-    def _build_headers(self, **kwargs):
-        headers = kwargs.copy()
-        headers["Authorization"] = f"Bearer {self._token}"
-        return headers
+    def __init__(
+        self,
+        endpoint,
+        username,
+        password,
+        client_id="GenesisCoreClientId",
+        client_secret="GenesisCoreSecret",
+        client_uuid=sys_uuid.UUID("00000000-0000-0000-0000-000000000000"),
+        timeout=5,
+    ):
+        auth = base.CoreIamAuthenticator(
+            base_url=endpoint,
+            username=username,
+            password=password,
+            client_id=client_id,
+            client_secret=client_secret,
+            client_uuid=client_uuid,
+        )
+        super().__init__(
+            base_url=endpoint,
+            http_client=bazooka.Client(default_timeout=timeout),
+            auth=auth,
+        )
 
     def get_user(self, user_id):
-        url = self._build_resource_uri([self.USER_PATH, user_id])
-        return self._client.get(
-            url,
-            headers=self._build_headers(),
-        ).json()
+        return self.get(self.USER_PATH, sys_uuid.UUID(str(user_id)))
