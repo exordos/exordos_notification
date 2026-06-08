@@ -25,7 +25,7 @@ requirements:
     from_version: "0.0.0"
   dbaas:
     from_version: "2.2.4"
-  mailer:
+  mailaas:
     from_version: "0.0.0"
 
 resources:
@@ -145,6 +145,34 @@ resources:
         kind: plain
       method: AUTO_HEX
 
+    notification_smtp_password:
+      name: notification_smtp_password
+      description: "SMTP account password for the notification mail relay"
+      project_id: "12345678-c625-4fee-81d5-f691897b8142"
+      constructor:
+        kind: plain
+      method: AUTO_HEX
+
+  # Mail (mailaas) — dedicated SMTP relay instance for notification
+  $mailaas.types.mail.instances:
+    notification_mail:
+      name: "notification-mail"
+      project_id: "12345678-c625-4fee-81d5-f691897b8142"
+      domain: "{{ mail_domain | default('mail.local.genesis-core.tech') }}"
+      cpu: 1
+      ram: 1024
+      disk_size: 10
+      version: $exordos_notification.imports.$exim4_1:uuid
+
+  # SMTP account used by the notification service to send mail.
+  # password_hash accepts plaintext — mailaas auto-hashes it with SHA512-crypt.
+  $mailaas.types.mail.instances.$notification_mail.accounts:
+    smtp_account:
+      project_id: "12345678-c625-4fee-81d5-f691897b8142"
+      username: "smtp"
+      password_hash: $core.secret.passwords.$notification_smtp_password:value
+      instance: $mailaas.types.mail.instances.$notification_mail:uuid
+
   # Compute
   $core.compute.nodes:
     notification_cp:
@@ -156,7 +184,7 @@ resources:
         kind: "disks"
         disks:
           - size: 10
-            image: "{{ repository | default('https://repository.genesis-core.tech/exordos-elements') }}/exordos_notification/{{ version }}/images/exordos-notification.raw.gz"
+            image: "{{ repository | default('https://repository.genesis-core.tech/exordos-elements') }}/exordos_notification/{{ version }}/images/exordos-notification.raw.zst"
             label: root
 
   # Config
@@ -188,16 +216,26 @@ resources:
       setter:
         kind: selector
         selector_strategy: latest
+    notification_endpoint:
+      name: "notification_endpoint"
+      project_id: "12345678-c625-4fee-81d5-f691897b8142"
+      setter:
+        kind: selector
+        selector_strategy: latest
 
   # Register notification endpoint in core VS so that IAM can push events to us.
   # VsBackedEventClient in core reads this variable (cached 30s) and sends
   # RegistrationEventPayload (with confirmation_code) directly to our /v1/events API.
+  # NOTE: noreply_address (notification_noreply_address VS variable) has no
+  # default value — it is installation-specific (depends on the mail domain).
+  # Set it via a separate per-installation manifest (see site_config.yaml.j2.example).
+  # Until it is set smtp_via_mailaas will stay NEW.
   $core.vs.values:
     notification_endpoint_value:
       name: "notification_endpoint"
       project_id: "12345678-c625-4fee-81d5-f691897b8142"
       value: "http://notification-cp.local.genesis-core.tech:8080"
-      variable: $exordos_notification.imports.$notification_endpoint_var:uuid
+      variable: $core.vs.variables.$notification_endpoint:uuid
 
   # DNS
   $exordos_notification.imports.$core_local_domain.records:
@@ -212,18 +250,18 @@ resources:
 
   # Notification EM resources — synced by EMSyncAgent into notification DB
   $exordos_notification.types.email.providers:
-    smtp_via_mailer:
+    smtp_via_mailaas:
       project_id: "12345678-c625-4fee-81d5-f691897b8142"
-      name: "smtp_via_mailer"
-      description: "SMTP via local mailer (exim4)"
+      name: "smtp_via_mailaas"
+      description: "SMTP via mailaas exim4 relay"
       status: "ACTIVE"
       protocol:
         kind: StartTlsSMTP
-        host: "mailer.local.genesis-core.tech"
+        host: f"{$mailaas.types.mail.instances.$notification_mail:join(ipsv4)}"
         port: 587
         noreply_email_address: f"{$core.vs.variables.$noreply_address:value}"
-        user: "smtp"
-        password: $exordos_notification.imports.$smtp_password:value
+        user: "smtp@{{ mail_domain | default('mail.local.genesis-core.tech') }}"
+        password: $core.secret.passwords.$notification_smtp_password:value
         skip_tls_verify: true
 
   $exordos_notification.types.email.event_types:
@@ -240,7 +278,7 @@ resources:
       name: "email_confirmation"
       description: "Email confirmation letter"
       status: "ACTIVE"
-      provider: $exordos_notification.types.email.providers.$smtp_via_mailer:uuid
+      provider: $exordos_notification.types.email.providers.$smtp_via_mailaas:uuid
       event_type: $exordos_notification.types.email.event_types.$email_confirmation:uuid
       is_default: true
       params: {}
@@ -268,6 +306,10 @@ resources:
             </body>
             </html>{% endraw %}
 
+exports:
+  noreply_address:
+    link: "$core.vs.variables.$noreply_address"
+
 imports:
   pg18:
     element: "$dbaas"
@@ -281,11 +323,7 @@ imports:
     element: "$core"
     kind: "resource"
     link: "$core.vs.variables.$hs256_jwks_encryption_key"
-  smtp_password:
-    element: "$mailer"
+  exim4_1:
+    element: "$mailaas"
     kind: "resource"
-    link: "$core.secret.passwords.$smtp_password"
-  notification_endpoint_var:
-    element: "$core"
-    kind: "resource"
-    link: "$core.vs.variables.$notification_endpoint"
+    link: "$mailaas.types.mail.versions.$exim4_1"

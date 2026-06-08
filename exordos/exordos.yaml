@@ -37,7 +37,7 @@ build:
     - manifest: manifests/exordos_notification.yaml.j2
       images:
       - name: exordos-notification
-        format: gz
+        format: zst
 
         # OS profile for the image
         profile: exordos_base
