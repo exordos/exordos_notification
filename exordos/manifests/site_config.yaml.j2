@@ -1,11 +1,15 @@
-# Example site configuration manifest for exordos_notification.
+# Site configuration manifest for exordos_notification.
 #
 # Copy to site_config.yaml.j2, fill in your values, and install:
 #   exordos em elements install output/manifests/site_config.yaml
 #
-# This manifest sets per-installation VS variables that notification
-# reads at runtime. Install it once after the notification element is
-# active; reinstalling the notification element will NOT overwrite these.
+# This manifest holds all per-installation, configurable content for the
+# notification service:
+#   * the noreply_address VS variable value (depends on your mail domain)
+#   * the email letter templates (subject + HTML body)
+#
+# Install it once after the notification element is active; reinstalling the
+# notification element will NOT overwrite these.
 
 name: "notification_site_config"
 description: "Site-specific configuration for exordos_notification"
@@ -26,8 +30,51 @@ resources:
       value: "noreply@mail.local.genesis-core.tech"
       variable: $notification_site_config.imports.$noreply_address_var:uuid
 
+  # Email letter templates — fully configurable per installation.
+  $exordos_notification.types.email.templates:
+    email_confirmation_template:
+      project_id: "12345678-c625-4fee-81d5-f691897b8142"
+      name: "email_confirmation"
+      description: "Email confirmation letter"
+      status: "ACTIVE"
+      provider: $notification_site_config.imports.$email_provider:uuid
+      event_type: $notification_site_config.imports.$email_confirmation_event_type:uuid
+      is_default: true
+      params: {}
+      content:
+        kind: email
+        title: "Confirm your email address"
+        bodies:
+          - |
+            {% raw %}<html>
+            <body style="font-family: Arial, sans-serif; max-width: 600px; margin: 0 auto;">
+            <h2>Welcome to Exordos!</h2>
+            <p>Hello <strong>{{ username }}</strong>,</p>
+            <p>Your account has been created. Please confirm your email address by clicking the button below.</p>
+            <p style="text-align: center; margin: 32px 0;">
+              <a href="{{ site_endpoint }}/confirm-email?user_id={{ uuid }}&code={{ confirmation_code }}"
+                 style="background: #1a1a1a; color: #ffffff; padding: 14px 28px; text-decoration: none; border-radius: 6px; font-size: 16px; display: inline-block;">
+                Confirm email address
+              </a>
+            </p>
+            <p>Or copy the link manually:</p>
+            <p style="word-break: break-all; background: #f4f4f4; padding: 10px; font-size: 12px;">
+              {{ site_endpoint }}/confirm-email?user_id={{ uuid }}&code={{ confirmation_code }}
+            </p>
+            <p style="color: #666; font-size: 12px;">The link is valid for 1 hour. This message was sent automatically. Do not reply.</p>
+            </body>
+            </html>{% endraw %}
+
 imports:
   noreply_address_var:
     element: "$exordos_notification"
     kind: "resource"
     link: "$core.vs.variables.$noreply_address"
+  email_provider:
+    element: "$exordos_notification"
+    kind: "resource"
+    link: "$exordos_notification.types.email.providers.$smtp_via_mailaas"
+  email_confirmation_event_type:
+    element: "$exordos_notification"
+    kind: "resource"
+    link: "$exordos_notification.types.email.event_types.$email_confirmation"
