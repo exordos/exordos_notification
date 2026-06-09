@@ -533,7 +533,7 @@ requires-dist = [
     { name = "coverage", marker = "extra == 'test'", specifier = ">=4.0" },
     { name = "gcl-iam", specifier = ">=1.0.0,<2.0.0" },
     { name = "gcl-looper", specifier = ">=1.0.0,<2.0.0" },
-    { name = "gcl-sdk", specifier = ">=3.0.0,<4.0.0" },
+    { name = "gcl-sdk", specifier = ">=3.0.5,<4.0.0" },
     { name = "jinja2", specifier = ">=3.1.5,<4.0.0" },
     { name = "mock", marker = "extra == 'test'", specifier = ">=3.0.5,<6.0.0" },
     { name = "mypy", marker = "extra == 'mypy'" },
@@ -591,7 +591,7 @@ wheels = [
 
 [[package]]
 name = "gcl-sdk"
-version = "3.0.3"
+version = "3.0.5"
 source = { registry = "https://pypi.org/simple" }
 dependencies = [
     { name = "bjoern" },
@@ -605,9 +605,9 @@ dependencies = [
     { name = "restalchemy" },
     { name = "xxhash" },
 ]
-sdist = { url = "https://files.pythonhosted.org/packages/27/a8/cd5ede01e8521209de47baeb7ae4dca75e1d0da501be39ca63f71a3870e2/gcl_sdk-3.0.3.tar.gz", hash = "sha256:88796d9e1794cea4abb884459cbcf883d5e43ce3ef989c37405e6339b36b4c12", size = 282772, upload-time = "2026-06-05T16:37:24.486Z" }
+sdist = { url = "https://files.pythonhosted.org/packages/69/69/636c5fbf7af9bb847e9fe38035203e3506e7e64263b50e929af777896ccc/gcl_sdk-3.0.5.tar.gz", hash = "sha256:77f10b519fff5c091ade03ddca93f31106d58c9ab83abd1484a323925a0983eb", size = 284527, upload-time = "2026-06-11T17:01:49.486Z" }
 wheels = [
-    { url = "https://files.pythonhosted.org/packages/e5/66/c0b7bb1b3fab4356209d4b7fd4be187b685abfe16ea8aaee29a405b8bf78/gcl_sdk-3.0.3-py3-none-any.whl", hash = "sha256:9a92c1fbc228af61ff00183c9fa7bea984ce357d5a1d708f39694fdbb17fb176", size = 211870, upload-time = "2026-06-05T16:37:22.615Z" },
+    { url = "https://files.pythonhosted.org/packages/ed/a2/341fab9f7f922d4b47b0cc7420c89a18d0361646de755b7d5bc50a44261b/gcl_sdk-3.0.5-py3-none-any.whl", hash = "sha256:091600d8ed29fdcc36e6cc53d772c91dca7eecb25a59b66190414996d43ee4e5", size = 215879, upload-time = "2026-06-11T17:01:47.945Z" },
 ]
 
 [[package]]

@@ -5,7 +5,9 @@ connection_url = postgresql://{{ GC_PG_USER }}:{{ GC_PG_PASS }}@{{ GC_PG_ENDPOIN
 config = logging.yaml
 
 [iam]
+# token_encryption_algorithm = HS256
 hs256_jwks_decryption_key = {{ GC_HS256_JWKS_ENCRYPTION_KEY }}
+audience = {{ AUDIENCE }}
 
 [user_api]
 bind_host = 0.0.0.0
@@ -15,4 +17,4 @@ bind_host = 0.0.0.0
 [iam_client]
 username = {{ IAM_USER_NAME }}
 password = {{ IAM_USER_PASS }}
-endpoint = http://core.local.genesis-core.tech:11010
+endpoint = http://core.local.genesis-core.tech/api/core

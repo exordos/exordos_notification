@@ -31,6 +31,8 @@ from exordos_notification import version as app_version
 skip_auth_endpoints = [
     iam_mw.EndpointComparator("/"),
     iam_mw.EndpointComparator("/v1/"),
+    iam_mw.EndpointComparator("/v1/events/[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12}", methods=["GET"]),
+    iam_mw.EndpointComparator("/v1/events/", methods=["POST"]),
 ]
 
 

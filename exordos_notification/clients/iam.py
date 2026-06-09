@@ -1,5 +1,4 @@
 import logging
-import uuid as sys_uuid
 
 import bazooka
 
@@ -7,7 +6,7 @@ LOG = logging.getLogger(__name__)
 
 _TOKEN_URL = "/v1/iam/clients/{client_uuid}/actions/get_token/invoke"
 USER_COLLECTION = "/v1/iam/users/"
-CLIENT_UUID = "00000000-0000-0000-0000-000000000000"
+CLIENT_UUID = "default"
 CLIENT_ID = "GenesisCoreClientId"
 CLIENT_SECRET = "GenesisCoreSecret"
 
@@ -71,13 +70,18 @@ class IAMClient:
             self._token = None
             self._token = self._get_token()
             resp = self._http.request(
-                method, url, headers={"Authorization": f"Bearer {self._token}"}, **kwargs
+                method,
+                url,
+                headers={"Authorization": f"Bearer {self._token}"},
+                **kwargs,
             )
         return resp.json()
 
     def filter(self, path, **filters):
-        params = {k: str(v).lower() if isinstance(v, bool) else str(v)
-                  for k, v in filters.items()}
+        params = {
+            k: str(v).lower() if isinstance(v, bool) else str(v)
+            for k, v in filters.items()
+        }
         return self._request("GET", path, params=params)
 
     def get(self, path, uuid):
@@ -85,4 +89,3 @@ class IAMClient:
 
     def get_user(self, user_id):
         return self.get(USER_COLLECTION, str(user_id))
-

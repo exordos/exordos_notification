@@ -206,8 +206,64 @@ resources:
           GC_PG_DB={$dbaas.types.postgres.instances.$notification_cluster_pg.databases.$notification_db:name}
           GC_PG_ENDPOINTS={$dbaas.types.postgres.instances.$notification_cluster_pg:join(ipsv4)}
           GC_HS256_JWKS_ENCRYPTION_KEY={$exordos_notification.imports.$var_hs256_jwks_encryption_key:value}
-          SITE_ENDPOINT={{ site_endpoint | default('http://localhost') }}
+          AUDIENCE={$exordos_notification.imports.$var_iam_default_client_id:value}
           "
+
+    # Wire core's IAM user-api to push events to this notification service.
+    # Instead of coupling core to a VS variable, we deliver the stock gcl_sdk
+    # HTTP event client configuration directly onto the core node(s) as config
+    # drop-ins:
+    #   * event_type_mapping.yaml  — maps core event KINDs to our event_type UUIDs
+    #   * exordos_core.d/90-notification-events.conf — enables the [events]
+    #     section (client_type=http + our endpoint), loaded via the
+    #     `--config-dir /etc/exordos_core/exordos_core.d` of ec-user-api.
+    # ec-user-api is restarted on change so the new client takes effect.
+    # The notification /v1/events endpoint skips auth, so the API token below is
+    # a placeholder and no IAM token has to be provisioned into core.
+    core_event_type_mapping:
+      project_id: "12345678-c625-4fee-81d5-f691897b8142"
+      path: /etc/exordos_core/event_type_mapping.yaml
+      target:
+        kind: node_set
+        # core_set (fixed UUID in core.yaml.j2)
+        node_set: "70c88222-b4d9-46c3-9340-aa5bfaaa4b94"
+      on_change:
+        kind: shell
+        # Restart only once BOTH drop-ins are in place. The mapping and the
+        # [events] conf are two independent config renders applied in arbitrary
+        # order; guarding both on_change hooks on the presence of both files
+        # ensures ec-user-api is restarted exactly once (when the second file
+        # arrives) and never starts with [events] enabled but no mapping
+        # (which would crash build_client).
+        command: >-
+          test -f /etc/exordos_core/event_type_mapping.yaml &&
+          test -f /etc/exordos_core/exordos_core.d/90-notification-events.conf &&
+          systemctl restart ec-user-api && systemctl restart ec-gservice || true
+      body:
+        kind: text
+        content: |
+          EventTypeMapping:
+              # exordos_core RegistrationEventPayload.KIND ->
+              # notification email_confirmation event_type UUID
+              IamUserRegistration: e0fe8070-e59c-4347-8df1-b3f638c06565
+    core_events_conf:
+      project_id: "12345678-c625-4fee-81d5-f691897b8142"
+      path: /etc/exordos_core/exordos_core.d/90-notification-events.conf
+      target:
+        kind: node_set
+        node_set: "70c88222-b4d9-46c3-9340-aa5bfaaa4b94"
+      on_change:
+        kind: shell
+        command: >-
+          test -f /etc/exordos_core/event_type_mapping.yaml &&
+          test -f /etc/exordos_core/exordos_core.d/90-notification-events.conf &&
+          systemctl restart ec-user-api && systemctl restart ec-gservice || true
+      body:
+        kind: text
+        content: |
+          [events]
+          enabled = true
+          exordos_notification_endpoint = http://notification-cp.local.genesis-core.tech:8080
 
   $core.vs.variables:
     noreply_address:
@@ -216,26 +272,11 @@ resources:
       setter:
         kind: selector
         selector_strategy: latest
-    notification_endpoint:
-      name: "notification_endpoint"
-      project_id: "12345678-c625-4fee-81d5-f691897b8142"
-      setter:
-        kind: selector
-        selector_strategy: latest
 
-  # Register notification endpoint in core VS so that IAM can push events to us.
-  # VsBackedEventClient in core reads this variable (cached 30s) and sends
-  # RegistrationEventPayload (with confirmation_code) directly to our /v1/events API.
   # NOTE: noreply_address (notification_noreply_address VS variable) has no
   # default value — it is installation-specific (depends on the mail domain).
-  # Set it via a separate per-installation manifest (see site_config.yaml.j2.example).
+  # Set it via a separate per-installation manifest (see site_config.yaml.j2).
   # Until it is set smtp_via_mailaas will stay NEW.
-  $core.vs.values:
-    notification_endpoint_value:
-      name: "notification_endpoint"
-      project_id: "12345678-c625-4fee-81d5-f691897b8142"
-      value: "http://notification-cp.local.genesis-core.tech:8080"
-      variable: $core.vs.variables.$notification_endpoint:uuid
 
   # DNS
   $exordos_notification.imports.$core_local_domain.records:
@@ -272,43 +313,18 @@ resources:
       description: "User email address confirmation"
       status: "ACTIVE"
 
-  $exordos_notification.types.email.templates:
-    email_confirmation_template:
-      project_id: "12345678-c625-4fee-81d5-f691897b8142"
-      name: "email_confirmation"
-      description: "Email confirmation letter"
-      status: "ACTIVE"
-      provider: $exordos_notification.types.email.providers.$smtp_via_mailaas:uuid
-      event_type: $exordos_notification.types.email.event_types.$email_confirmation:uuid
-      is_default: true
-      params: {}
-      content:
-        kind: email
-        title: "Confirm your email address"
-        bodies:
-          - |
-            {% raw %}<html>
-            <body style="font-family: Arial, sans-serif; max-width: 600px; margin: 0 auto;">
-            <h2>Welcome to Exordos!</h2>
-            <p>Hello <strong>{{ username }}</strong>,</p>
-            <p>Your account has been created. Please confirm your email address by clicking the button below.</p>
-            <p style="text-align: center; margin: 32px 0;">
-              <a href="{{ site_endpoint }}/confirm-email?user_id={{ uuid }}&code={{ confirmation_code }}"
-                 style="background: #1a1a1a; color: #ffffff; padding: 14px 28px; text-decoration: none; border-radius: 6px; font-size: 16px; display: inline-block;">
-                Confirm email address
-              </a>
-            </p>
-            <p>Or copy the link manually:</p>
-            <p style="word-break: break-all; background: #f4f4f4; padding: 10px; font-size: 12px;">
-              {{ site_endpoint }}/confirm-email?user_id={{ uuid }}&code={{ confirmation_code }}
-            </p>
-            <p style="color: #666; font-size: 12px;">The link is valid for 1 hour. This message was sent automatically. Do not reply.</p>
-            </body>
-            </html>{% endraw %}
+  # NOTE: the email templates themselves (letter subject/body) are
+  # installation-configurable content and live in the separate
+  # site_config.yaml.j2 manifest, which imports the provider and event_type
+  # exported below.
 
 exports:
   noreply_address:
     link: "$core.vs.variables.$noreply_address"
+  email_provider:
+    link: "$exordos_notification.types.email.providers.$smtp_via_mailaas"
+  email_confirmation_event_type:
+    link: "$exordos_notification.types.email.event_types.$email_confirmation"
 
 imports:
   pg18:
@@ -323,6 +339,10 @@ imports:
     element: "$core"
     kind: "resource"
     link: "$core.vs.variables.$hs256_jwks_encryption_key"
+  var_iam_default_client_id:
+    element: "$core"
+    kind: "resource"
+    link: "$core.vs.variables.$iam_default_client_id"
   exim4_1:
     element: "$mailaas"
     kind: "resource"
