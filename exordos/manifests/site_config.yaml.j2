@@ -1,20 +1,32 @@
 # Site configuration manifest for exordos_notification.
 #
-# Copy to site_config.yaml.j2, fill in your values, and install:
-#   exordos em elements install output/manifests/site_config.yaml
+# Variables (all optional, have defaults):
+#   version          — element version, e.g. 1.0.0  (default: "1.0.0")
+#   mail_domain      — mail server domain            (default: mail.example.com)
+#   noreply_address  — sender address                (default: noreply@mail.example.com)
+#
+# Install:
+#   exordos em elements install exordos/manifests/site_config.yaml.j2
+#   exordos em elements install exordos/manifests/site_config.yaml.j2 \
+#     --manifest-var version=1.2.0 \
+#     --manifest-var mail_domain=mail.acme.com \
+#     --manifest-var noreply_address=noreply@acme.com
 #
 # This manifest holds all per-installation, configurable content for the
 # notification service:
-#   * the noreply_address VS variable value (depends on your mail domain)
+#   * the mail_domain VS variable value
+#   * the noreply_address VS variable value
 #   * the email letter templates (subject + HTML body)
 #
 # Install it once after the notification element is active; reinstalling the
 # notification element will NOT overwrite these.
+{%- set lc = '{{' %}
+{%- set rc = '}}' %}
 
 name: "notification_site_config"
 description: "Site-specific configuration for exordos_notification"
 schema_version: 1
-version: "1.0.0"
+version: "{{ version | default('1.0.0') }}"
 api_version: "v1"
 
 requirements:
@@ -24,10 +36,15 @@ requirements:
 resources:
 
   $core.vs.values:
+    mail_domain_value:
+      name: "notification_mail_domain"
+      project_id: "12345678-c625-4fee-81d5-f691897b8142"
+      value: "{{ mail_domain | default('mail.example.com') }}"
+      variable: $notification_site_config.imports.$mail_domain_var:uuid
     noreply_address_value:
       name: "notification_noreply_address"
       project_id: "12345678-c625-4fee-81d5-f691897b8142"
-      value: "noreply@mail.local.genesis-core.tech"
+      value: "{{ noreply_address | default('noreply@mail.example.com') }}"
       variable: $notification_site_config.imports.$noreply_address_var:uuid
 
   # Email letter templates — fully configurable per installation.
@@ -46,26 +63,30 @@ resources:
         title: "Confirm your email address"
         bodies:
           - |
-            {% raw %}<html>
+            <html>
             <body style="font-family: Arial, sans-serif; max-width: 600px; margin: 0 auto;">
             <h2>Welcome to Exordos!</h2>
-            <p>Hello <strong>{{ username }}</strong>,</p>
+            <p>Hello <strong>{{ lc }} user.username {{ rc }}</strong>,</p>
             <p>Your account has been created. Please confirm your email address by clicking the button below.</p>
             <p style="text-align: center; margin: 32px 0;">
-              <a href="{{ site_endpoint }}/confirm-email?user_id={{ uuid }}&code={{ confirmation_code }}"
+              <a href="{{ lc }} site_endpoint {{ rc }}/confirm-email?user_id={{ lc }} user.uuid {{ rc }}&code={{ lc }} confirmation_code {{ rc }}"
                  style="background: #1a1a1a; color: #ffffff; padding: 14px 28px; text-decoration: none; border-radius: 6px; font-size: 16px; display: inline-block;">
                 Confirm email address
               </a>
             </p>
             <p>Or copy the link manually:</p>
             <p style="word-break: break-all; background: #f4f4f4; padding: 10px; font-size: 12px;">
-              {{ site_endpoint }}/confirm-email?user_id={{ uuid }}&code={{ confirmation_code }}
+              {{ lc }} site_endpoint {{ rc }}/confirm-email?user_id={{ lc }} user.uuid {{ rc }}&code={{ lc }} confirmation_code {{ rc }}
             </p>
             <p style="color: #666; font-size: 12px;">The link is valid for 1 hour. This message was sent automatically. Do not reply.</p>
             </body>
-            </html>{% endraw %}
+            </html>
 
 imports:
+  mail_domain_var:
+    element: "$exordos_notification"
+    kind: "resource"
+    link: "$core.vs.variables.$mail_domain"
   noreply_address_var:
     element: "$exordos_notification"
     kind: "resource"
