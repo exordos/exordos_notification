@@ -158,7 +158,7 @@ resources:
     notification_mail:
       name: "notification-mail"
       project_id: "12345678-c625-4fee-81d5-f691897b8142"
-      domain: "{{ mail_domain | default('mail.local.genesis-core.tech') }}"
+      domain: f"{$core.vs.variables.$mail_domain:value}"
       cpu: 1
       ram: 1024
       disk_size: 10
@@ -266,6 +266,12 @@ resources:
           exordos_notification_endpoint = http://notification-cp.local.genesis-core.tech:8080
 
   $core.vs.variables:
+    mail_domain:
+      name: "notification_mail_domain"
+      project_id: "12345678-c625-4fee-81d5-f691897b8142"
+      setter:
+        kind: selector
+        selector_strategy: latest
     noreply_address:
       name: "notification_noreply_address"
       project_id: "12345678-c625-4fee-81d5-f691897b8142"
@@ -273,10 +279,9 @@ resources:
         kind: selector
         selector_strategy: latest
 
-  # NOTE: noreply_address (notification_noreply_address VS variable) has no
-  # default value — it is installation-specific (depends on the mail domain).
-  # Set it via a separate per-installation manifest (see site_config.yaml.j2).
-  # Until it is set smtp_via_mailaas will stay NEW.
+  # NOTE: mail_domain and noreply_address VS variables have no default values —
+  # they are installation-specific. Set them via the separate per-installation
+  # manifest (see site_config.yaml.j2). Until set, smtp_via_mailaas will stay NEW.
 
   # DNS
   $exordos_notification.imports.$core_local_domain.records:
@@ -301,7 +306,7 @@ resources:
         host: f"{$mailaas.types.mail.instances.$notification_mail:join(ipsv4)}"
         port: 587
         noreply_email_address: f"{$core.vs.variables.$noreply_address:value}"
-        user: "smtp@{{ mail_domain | default('mail.local.genesis-core.tech') }}"
+        user: f"smtp@{$core.vs.variables.$mail_domain:value}"
         password: $core.secret.passwords.$notification_smtp_password:value
         skip_tls_verify: true
 
@@ -319,6 +324,8 @@ resources:
   # exported below.
 
 exports:
+  mail_domain:
+    link: "$core.vs.variables.$mail_domain"
   noreply_address:
     link: "$core.vs.variables.$noreply_address"
   email_provider:
