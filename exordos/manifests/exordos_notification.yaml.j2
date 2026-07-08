@@ -165,12 +165,13 @@ resources:
       version: $exordos_notification.imports.$exim4_1:uuid
 
   # SMTP account used by the notification service to send mail.
-  # password_hash accepts plaintext — mailaas auto-hashes it with SHA512-crypt.
+  # `password` is the plaintext secret; mailaas stores it verbatim (so this
+  # target reconciles idempotently) and derives the exim4 crypt hash for the DP.
   $mailaas.types.mail.instances.$notification_mail.accounts:
     smtp_account:
       project_id: "12345678-c625-4fee-81d5-f691897b8142"
       username: "smtp"
-      password_hash: $core.secret.passwords.$notification_smtp_password:value
+      password: $core.secret.passwords.$notification_smtp_password:value
       instance: $mailaas.types.mail.instances.$notification_mail:uuid
 
   # Compute
