@@ -80,7 +80,7 @@ jobs:
 
       - name: Set hypervisor with overbooking
         run: |
-          HYPER_UUID="$(exordos c h l -o json | jq -r .[0]."UUID")"
+          HYPER_UUID="$(exordos c h l -o json | jq -r .[0]."uuid")"
           exordos compute hypervisors update $HYPER_UUID --cores-ratio 10.0 --ram-ratio 10.0
 
       - name: Install metapaas
@@ -89,7 +89,7 @@ jobs:
       - name: Wait for metapaas ACTIVE
         timeout-minutes: 10
         run: |
-          while [ $(exordos ee l -o json -f name=metapaas | jq -r .[0]."Status") != "ACTIVE" ]; do
+          while [ $(exordos ee l -o json -f name=metapaas | jq -r .[0]."status") != "ACTIVE" ]; do
             sleep 5
           done
 
@@ -102,7 +102,7 @@ jobs:
         timeout-minutes: 15
         run: |
           for element in dbaas mailaas; do
-            while [ $(exordos ee l -o json -f name=$element | jq -r .[0]."Status") != "ACTIVE" ]; do
+            while [ $(exordos ee l -o json -f name=$element | jq -r .[0]."status") != "ACTIVE" ]; do
               sleep 5
             done
             echo "$element is ACTIVE"
@@ -116,15 +116,23 @@ jobs:
 
       - name: Install exordos_notification
         run: |
-          VERSION=$(cat artifacts/version.txt)
-          exordos e e install $ELEMENT_NAME -v $VERSION
+          set -eux
+
+          VERSION=$(cat "$GITHUB_WORKSPACE/artifacts/version.txt")
+
+          # `exordos e e install` resolves its argument as a path before falling
+          # back to the repository, and the workspace holds a package directory
+          # named exordos_notification. Install from elsewhere so the element
+          # name is looked up in the repository.
+          cd "$RUNNER_TEMP"
+          exordos e e install "$ELEMENT_NAME" -v "$VERSION"
 
       - name: Check exordos_notification ACTIVE
         timeout-minutes: 10
         run: |
           set -eux
 
-          while [ $(exordos ee l -o json -f name=$ELEMENT_NAME | jq -r .[0]."Status") != "ACTIVE" ]; do
+          while [ $(exordos ee l -o json -f name=$ELEMENT_NAME | jq -r .[0]."status") != "ACTIVE" ]; do
             sleep 5
           done
 
