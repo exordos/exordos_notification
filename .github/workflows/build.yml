@@ -116,8 +116,16 @@ jobs:
 
       - name: Install exordos_notification
         run: |
-          VERSION=$(cat artifacts/version.txt)
-          exordos e e install $ELEMENT_NAME -v $VERSION
+          set -eux
+
+          VERSION=$(cat "$GITHUB_WORKSPACE/artifacts/version.txt")
+
+          # `exordos e e install` resolves its argument as a path before falling
+          # back to the repository, and the workspace holds a package directory
+          # named exordos_notification. Install from elsewhere so the element
+          # name is looked up in the repository.
+          cd "$RUNNER_TEMP"
+          exordos e e install "$ELEMENT_NAME" -v "$VERSION"
 
       - name: Check exordos_notification ACTIVE
         timeout-minutes: 10
