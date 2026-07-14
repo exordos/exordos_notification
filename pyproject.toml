@@ -43,7 +43,7 @@ build-backend = "setuptools.build_meta"
 
 [project.optional-dependencies]
 dev = [
-    "tox>=4.0.0",
+    "tox>=4.56.4",
     "tox-uv",
     "pytest<10.0.0,>=8.0.0",
 ]
