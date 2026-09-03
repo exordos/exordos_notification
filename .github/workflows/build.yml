@@ -80,7 +80,7 @@ jobs:
 
       - name: Set hypervisor with overbooking
         run: |
-          HYPER_UUID="$(exordos c h l -o json | jq -r .[0]."UUID")"
+          HYPER_UUID="$(exordos c h l -o json | jq -r .[0]."uuid")"
           exordos compute hypervisors update $HYPER_UUID --cores-ratio 10.0 --ram-ratio 10.0
 
       - name: Install metapaas
@@ -89,7 +89,7 @@ jobs:
       - name: Wait for metapaas ACTIVE
         timeout-minutes: 10
         run: |
-          while [ $(exordos ee l -o json -f name=metapaas | jq -r .[0]."Status") != "ACTIVE" ]; do
+          while [ $(exordos ee l -o json -f name=metapaas | jq -r .[0]."status") != "ACTIVE" ]; do
             sleep 5
           done
 
@@ -102,7 +102,7 @@ jobs:
         timeout-minutes: 15
         run: |
           for element in dbaas mailaas; do
-            while [ $(exordos ee l -o json -f name=$element | jq -r .[0]."Status") != "ACTIVE" ]; do
+            while [ $(exordos ee l -o json -f name=$element | jq -r .[0]."status") != "ACTIVE" ]; do
               sleep 5
             done
             echo "$element is ACTIVE"
@@ -124,7 +124,7 @@ jobs:
         run: |
           set -eux
 
-          while [ $(exordos ee l -o json -f name=$ELEMENT_NAME | jq -r .[0]."Status") != "ACTIVE" ]; do
+          while [ $(exordos ee l -o json -f name=$ELEMENT_NAME | jq -r .[0]."status") != "ACTIVE" ]; do
             sleep 5
           done
 
