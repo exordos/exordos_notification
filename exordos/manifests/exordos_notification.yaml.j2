@@ -184,7 +184,7 @@ resources:
         kind: "disks"
         disks:
           - size: 10
-            image: "{{ repository | default('https://repository.genesis-core.tech/exordos-elements') }}/exordos_notification/{{ version }}/images/exordos-notification.raw.zst"
+            image: "{{ images.exordos_notification }}"
             label: root
 
   # Config
