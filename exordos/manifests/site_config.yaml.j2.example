@@ -5,6 +5,7 @@
 #
 # This manifest holds all per-installation, configurable content for the
 # notification service:
+#   * the mail_domain VS variable value
 #   * the noreply_address VS variable value (depends on your mail domain)
 #   * the email letter templates (subject + HTML body)
 #
@@ -24,6 +25,11 @@ requirements:
 resources:
 
   $core.vs.values:
+    mail_domain_value:
+      name: "notification_mail_domain"
+      project_id: "12345678-c625-4fee-81d5-f691897b8142"
+      value: "mail.example.com"
+      variable: $notification_site_config.imports.$mail_domain_var:uuid
     noreply_address_value:
       name: "notification_noreply_address"
       project_id: "12345678-c625-4fee-81d5-f691897b8142"
@@ -66,6 +72,10 @@ resources:
             </html>{% endraw %}
 
 imports:
+  mail_domain_var:
+    element: "$exordos_notification"
+    kind: "resource"
+    link: "$core.vs.variables.$mail_domain"
   noreply_address_var:
     element: "$exordos_notification"
     kind: "resource"

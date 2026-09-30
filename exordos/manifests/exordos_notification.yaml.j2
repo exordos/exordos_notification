@@ -281,9 +281,22 @@ resources:
         kind: selector
         selector_strategy: latest
 
-  # NOTE: mail_domain and noreply_address VS variables have no default values —
-  # they are installation-specific. Set them via the separate per-installation
-  # manifest (see site_config.yaml.j2). Until set, smtp_via_mailaas will stay NEW.
+  # Defaults for mail_domain and noreply_address, so the element comes up
+  # without a site config (in CI, say). They are installation-specific: set
+  # the real ones via the separate per-installation manifest (see
+  # site_config.yaml.j2). The selector takes the latest created value, so the
+  # site config's values win over these.
+  $core.vs.values:
+    mail_domain_default:
+      name: "notification_mail_domain_default"
+      project_id: "12345678-c625-4fee-81d5-f691897b8142"
+      value: "{{ mail_domain | default('mail.example.com') }}"
+      variable: "$core.vs.variables.$mail_domain:uuid"
+    noreply_address_default:
+      name: "notification_noreply_address_default"
+      project_id: "12345678-c625-4fee-81d5-f691897b8142"
+      value: "{{ noreply_address | default('noreply@mail.example.com') }}"
+      variable: "$core.vs.variables.$noreply_address:uuid"
 
   # DNS
   $exordos_notification.imports.$core_local_domain.records:

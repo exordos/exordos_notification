@@ -20,7 +20,7 @@ This installs the notification service, its database, mail relay instance, IAM u
 
 ### 2. Configure site-specific settings
 
-`exordos_notification` creates a VS variable `notification_noreply_address` with no default value — it is installation-specific (depends on your mail domain). Until it is set, the SMTP provider resource stays `NEW` and no emails are sent.
+`exordos_notification` creates the VS variables `notification_mail_domain` and `notification_noreply_address` with placeholder defaults (`mail.example.com` and `noreply@mail.example.com`), so the element comes up on its own. They are installation-specific: set the real values via the site config, whose values take precedence over the defaults.
 
 Copy the example manifest and fill in your noreply address:
 
