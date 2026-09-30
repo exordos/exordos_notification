@@ -7,37 +7,20 @@ on:
     tags:
       - '*'
 
-env:
-  ARTIFACTS_PATH: artifacts
-
 jobs:
   Build:
-    runs-on: [self-hosted, vm]
-    if : ${{ github.actor != 'dependabot[bot]' }}
-    strategy:
-      fail-fast: true
-    steps:
-      - uses: actions/checkout@v7
-        with:
-          fetch-depth: 0
-      - name: Build Element
-        env:
-          PUSH_CFG: ${{ secrets.PUSH_CFG }}
-        run: |
-          set -eux
-
-          mkdir -p ${ARTIFACTS_PATH}
-
-          VERSION="$(exordos get-version .)"
-
-          exordos build $(pwd)
-
-          # Decode and write the push configuration
-          echo "$PUSH_CFG" | base64 -d > exordos/exordos.push.yaml
-          exordos push -c exordos/exordos.push.yaml -t local -f --latest
-      - name: Setup upterm session
-        uses: owenthereal/action-upterm@v1
-        if: ${{ failure() }}
-        with:
-          limit-access-to-actor: true
-          wait-timeout-minutes: 15
+    if: ${{ github.actor != 'dependabot[bot]' }}
+    uses: exordos/exordos_ci/.github/workflows/element_build.yml@master
+    secrets:
+      PUSH_CFG: ${{ secrets.PUSH_CFG }}
+  # The notification element keeps its data in dbaas and sends mail through
+  # mailaas, both metapaas plugins, so they go on the realm first.
+  Test:
+    needs: Build
+    uses: exordos/exordos_ci/.github/workflows/element_realm_test.yml@master
+    with:
+      elements: exordos_notification
+      version: ${{ needs.Build.outputs.version }}
+      dependencies: metapaas dbaas mailaas
+      overbook: true
+    secrets: inherit
