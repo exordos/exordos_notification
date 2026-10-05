@@ -13,13 +13,11 @@ jobs:
     uses: exordos/exordos_ci/.github/workflows/element_build.yml@master
     secrets:
       PUSH_CFG: ${{ secrets.PUSH_CFG }}
-  # The notification element keeps its data in dbaas and sends mail through
-  # mailaas, both metapaas plugins, so they go on the realm first.
   Test:
     needs: Build
     uses: exordos/exordos_ci/.github/workflows/element_realm_test.yml@master
     with:
-      elements: exordos_notification
+      elements: exordos_notification notification_site_config_example
       version: ${{ needs.Build.outputs.version }}
       dependencies: metapaas dbaas mailaas
       overbook: true

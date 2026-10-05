@@ -48,3 +48,6 @@ build:
         override:
           # For development purposes it's handy to have more space.
           disk_size: "8G"
+
+    # Use a .j2 alias so the builder renders the example template.
+    - manifest: manifests/notification_site_config_example.yaml.j2
