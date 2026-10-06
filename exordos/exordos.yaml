@@ -34,6 +34,8 @@ build:
 
   # List of elements in the project
   elements:
+    - manifest: manifests/notification_pg_backup.yaml.j2
+
     - manifest: manifests/exordos_notification.yaml.j2
       images:
       - name: exordos-notification

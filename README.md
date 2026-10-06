@@ -44,3 +44,21 @@ IAM (core)  ──event──►  exordos_notification  ──SMTP──►  mai
 - **notification-cp** — the notification control plane VM (runs the notification service)
 - **mailaas relay** — a dedicated `mail.instances` provisioned by metapaas; the notification service authenticates as the `smtp` account
 - **VS variables** — `notification_noreply_address` (set via `site_config`) and `notification_endpoint` (auto-set by the manifest)
+
+## Optional PostgreSQL backups
+
+After `exordos_notification` and `communal_s3` are active, install the separate
+backup element (requires `dbaas` ≥ 2.7.0 and `s3aas`):
+
+```bash
+exordos em elements install notification_pg_backup
+```
+
+`exordos/manifests/notification_pg_backup.yaml.j2` imports the existing
+`notification_cluster_pg` and creates its backup policy, a private
+`notification-pg-backups` bucket on `communal_s3`, a scoped S3 user, and generated
+access, secret and encryption keys. It enables WAL archiving, weekly full backups
+and daily incremental backups, retaining two full backups with their incremental
+backups and WAL. Preserve the encryption key for restores.
+
+The notification element can be installed without the backup element or S3.
