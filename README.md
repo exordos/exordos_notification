@@ -62,3 +62,31 @@ and daily incremental backups, retaining two full backups with their incremental
 backups and WAL. Preserve the encryption key for restores.
 
 The notification element can be installed without the backup element or S3.
+
+## Restore PostgreSQL backups
+
+After a successful backup is available, install the separate restore element:
+
+```bash
+exordos em elements install notification_pg_restore
+```
+
+`exordos/manifests/notification_pg_restore.yaml.j2` creates a new PostgreSQL 18
+instance, `notification-pg-restored`, with 1 CPU, 2048 MiB RAM and a 20 GiB disk,
+matching the source cluster. It imports the source cluster UUID from
+`exordos_notification` and the bucket and credentials from `notification_pg_backup`,
+then restores through the latest archived WAL. Both elements and `communal_s3`
+must remain installed; DBaaS ≥ 2.6.2 is required.
+
+For a restore to a specific time, change `restore_from.target` before installing:
+
+```yaml
+target:
+  kind: time
+  time: "2026-10-06T08:00:00Z"
+```
+
+The notification service continues using its original database; switching it to
+the restored instance is a separate step. The restored instance has no backup
+policy of its own. `restore_from` is applied only when creating the instance;
+to repeat the restore, delete the restore element and install it again.
