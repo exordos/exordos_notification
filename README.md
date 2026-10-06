@@ -48,7 +48,7 @@ IAM (core)  ──event──►  exordos_notification  ──SMTP──►  mai
 ## Optional PostgreSQL backups
 
 After `exordos_notification` and `communal_s3` are active, install the separate
-backup element (requires `dbaas` ≥ 2.7.0 and `s3aas`):
+backup element (requires `dbaas` ≥ 2.6.2 and `s3aas`):
 
 ```bash
 exordos em elements install notification_pg_backup
