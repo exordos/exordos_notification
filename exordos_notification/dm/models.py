@@ -303,11 +303,15 @@ class Provider(
                 if target["device_uuid"] in rejected:
                     key = InactiveToken.identify(scope, target["registration_token"])
                     key.remember()
+            # Polling the same upstream event can report an already cached rejection.
+            errors = error.errors + [
+                item for item in inactive if item not in error.errors
+            ]
             if isinstance(error, transports.DeliveryPending):
-                raise transports.DeliveryPending(inactive + error.errors) from None
+                raise transports.DeliveryPending(errors) from None
             raise transports.DeliveryError(
                 error.code,
-                inactive + error.errors,
+                errors,
                 error.permanent,
             ) from None
         if inactive:
