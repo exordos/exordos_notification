@@ -65,6 +65,12 @@ def get_openapi_engine():
     return openapi_engine
 
 
+class MetadataOnlyLoggingMiddleware(logging_mw.LoggingMiddleware):
+    def _truncate_body(self, body, max_size=None):
+        # Mobile event bodies contain device tokens and encrypted snapshots.
+        return "[REDACTED]" if body is not None else None
+
+
 def build_wsgi_application(iam_engine_driver):
     return middlewares.attach_middlewares(
         applications.OpenApiApplication(
@@ -78,6 +84,6 @@ def build_wsgi_application(iam_engine_driver):
                 skip_auth_endpoints=skip_auth_endpoints,
             ),
             errors_mw.ErrorsHandlerMiddleware,
-            logging_mw.LoggingMiddleware,
+            MetadataOnlyLoggingMiddleware,
         ],
     )

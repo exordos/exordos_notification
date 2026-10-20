@@ -574,6 +574,12 @@ class UserExchangeType(types_dynamic.KindModelType):
             value["user_uuid"] = legacy_user
         return super().from_simple_type(value)
 
+    def to_simple_type(self, value):
+        result = super().to_simple_type(value)
+        # Keep the original v1 response key for clients reading existing User events.
+        result["user_id"] = result["user_uuid"]
+        return result
+
 
 class DummyExchange(types_dynamic.AbstractKindModel):
     KIND = "Dummy"

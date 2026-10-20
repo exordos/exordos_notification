@@ -5,6 +5,7 @@
 import base64
 import datetime
 import json
+import logging
 import unittest
 import uuid
 from unittest import mock
@@ -233,6 +234,18 @@ class FirebaseTransportTest(unittest.TestCase):
 
 
 class RelayTransportTest(unittest.TestCase):
+    def test_cleartext_relay_is_rejected_before_reading_credentials(self):
+        with (
+            mock.patch("builtins.open") as credentials,
+            self.assertRaises(transports.DeliveryError) as raised,
+        ):
+            transports.relay_client(
+                "http://notification.example.com", "/test/auth.json"
+            )
+        credentials.assert_not_called()
+        self.assertEqual("insecure_relay_endpoint", raised.exception.code)
+        self.assertTrue(raised.exception.permanent)
+
     def test_persisted_upstream_event_is_not_created_again(self):
         event, _ = push_event()
         content = models.RenderedNotificationContent(payload=event.notification_event())
@@ -274,3 +287,19 @@ def test_python_producer_fixture_is_forwarded_without_content_enrichment():
     assert len(rendered) == 1
     assert rendered[0].payload == fixture["payload"]
     assert "registration_token" not in json.dumps(rendered[0].payload)
+
+
+def test_relay_response_body_is_redacted_even_if_upstream_echoes_input(caplog):
+    response = mock.Mock(
+        url="https://notification.example.com/v1/events/",
+        status_code=400,
+        reason="Bad Request",
+    )
+    response.text = "synthetic-FCM-token-in-error-body"
+    with (
+        caplog.at_level(logging.DEBUG),
+        transports.RelayHttpSession(None, True) as session,
+    ):
+        session._log_response(response)
+    assert "status code 400" in caplog.text
+    assert response.text not in caplog.text

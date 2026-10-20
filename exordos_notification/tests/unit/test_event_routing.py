@@ -26,7 +26,7 @@ class UserExchangeTest(unittest.TestCase):
 
         iam.get_user.assert_called_once_with(user_uuid)
         self.assertEqual(
-            {"kind": "User", "user_uuid": str(user_uuid)},
+            {"kind": "User", "user_uuid": str(user_uuid), "user_id": str(user_uuid)},
             exchange_type.to_simple_type(exchange),
         )
 
@@ -41,6 +41,12 @@ class UserExchangeTest(unittest.TestCase):
         )
 
         self.assertEqual(user_uuid, exchange.user_uuid)
+        serialized = exchange_type.to_simple_type(exchange)
+        self.assertEqual(str(user_uuid), serialized["user_id"])
+        self.assertEqual(str(user_uuid), serialized["user_uuid"])
+        self.assertEqual(
+            user_uuid, exchange_type.from_simple_type(serialized).user_uuid
+        )
 
     def test_reject_conflicting_user_identifiers(self):
         exchange_type = models.Event.properties.properties[

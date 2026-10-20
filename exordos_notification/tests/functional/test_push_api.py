@@ -94,6 +94,29 @@ def test_push_requires_source_authorization_and_uuid_is_idempotent(http_server):
     )
 
 
+def test_mobile_api_responses_omit_device_addresses_without_changing_the_snapshot(
+    http_server,
+):
+    base, driver = http_server
+    event, _ = push_event()
+    payload = event.notification_event()
+    headers = source_headers(driver, payload)
+    created = requests.post(
+        base + "/v1/events/", json=payload, headers=headers, timeout=5
+    )
+    assert created.status_code == 201
+    read = requests.get(
+        base + "/v1/events/" + payload["uuid"], headers=headers, timeout=5
+    )
+    assert read.status_code == 200
+    for response in [created, read]:
+        assert "devices" not in response.json()["event_params"]
+        for device in payload["event_params"]["devices"]:
+            assert device["registration_token"] not in response.text
+    saved = models.Event.objects.get_one(filters={"uuid": event.uuid})
+    assert saved.event_params == event.event_params
+
+
 def test_push_rejects_project_mismatch_and_cannot_be_rewritten(http_server):
     base, driver = http_server
     event, _ = push_event()
@@ -144,6 +167,7 @@ def test_legacy_email_event_post_and_poll_remain_compatible(http_server):
         timeout=5,
     )
     assert response.status_code == 201, response.text
+    assert response.json()["event_params"] == payload["event_params"]
     assert (
         requests.get(base + "/v1/events/" + payload["uuid"], timeout=5).status_code
         == 200
@@ -351,3 +375,80 @@ def test_public_relay_ingress_cannot_submit_legacy_email(http_server):
         ).status_code
         == 403
     )
+
+
+def test_user_exchange_preserves_both_v1_response_keys(http_server):
+    base, driver = http_server
+    event, _ = push_event()
+    payload = event.notification_event()
+    recipient = payload["exchange"].pop("user_uuid")
+    payload["exchange"]["user_id"] = recipient
+    headers = source_headers(driver, payload)
+    response = requests.post(
+        base + "/v1/events/", json=payload, headers=headers, timeout=5
+    )
+    assert response.status_code == 201, response.text
+    read = requests.get(
+        base + "/v1/events/" + payload["uuid"], headers=headers, timeout=5
+    )
+    assert read.status_code == 200, read.text
+    for result in [response, read]:
+        assert result.json()["exchange"] == {
+            "kind": "User",
+            "user_uuid": recipient,
+            "user_id": recipient,
+        }
+
+
+def test_binding_update_keeps_owner_and_project_but_allows_transport_selection(
+    http_server,
+):
+    base, driver = http_server
+    _, first = push_event()
+    first.is_default = True
+    first.provider.insert()
+    first.insert()
+    second = models.Template(
+        name="Another transport",
+        project_id=first.project_id,
+        event_type=first.event_type,
+        provider=first.provider,
+        params={},
+        content=models.NotificationContent(),
+        is_default=True,
+    )
+    second.insert()
+    owner, project = uuid.uuid4(), uuid.uuid4()
+    headers = driver.headers(user_uuid=owner, project_uuid=project)
+    body = {
+        "user": str(uuid.uuid4()),
+        "project_id": str(uuid.uuid4()),
+        "event_type": "/v1/event_types/" + str(first.event_type.uuid),
+        "template": "/v1/templates/" + str(first.uuid),
+    }
+    created = requests.post(
+        base + "/v1/bindings/", headers=headers, json=body, timeout=5
+    )
+    assert created.status_code == 201, created.text
+    url = base + "/v1/bindings/" + created.json()["uuid"]
+    other_owner, other_project = uuid.uuid4(), uuid.uuid4()
+    changed = requests.put(
+        url,
+        headers=headers,
+        json={
+            "user": str(other_owner),
+            "project_id": str(other_project),
+            "template": "/v1/templates/" + str(second.uuid),
+        },
+        timeout=5,
+    )
+    assert changed.status_code == 200, changed.text
+    assert changed.json()["user"] == str(owner)
+    assert changed.json()["project_id"] == str(project)
+    assert changed.json()["template"] == "/v1/templates/" + str(second.uuid)
+    hidden = requests.get(
+        url,
+        headers=driver.headers(user_uuid=other_owner, project_uuid=other_project),
+        timeout=5,
+    )
+    assert hidden.status_code == 404, hidden.text

@@ -126,8 +126,28 @@ class BindingController(ra_controllers.BaseResourceController):
         }
 
 
+class EventParamsField(resources.ResourceRAProperty):
+    def get_dump_callable(self):
+        return self.dump_value
+
+    def dump_value(self, value):
+        if push.is_push_event(None, value):
+            return {key: item for key, item in value.items() if key != "devices"}
+        return super().dump_value(value)
+
+
+class EventResource(resources.ResourceByRAModel):
+    def get_fields(self, override_is_public_field_func=None):
+        for name, field in super().get_fields(override_is_public_field_func):
+            if name == "event_params":
+                field = EventParamsField(
+                    self, self.get_property_type(name), name, public=field.is_public()
+                )
+            yield name, field
+
+
 class EventController(ra_controllers.BaseResourceController):
-    __resource__ = resources.ResourceByRAModel(models.Event, convert_underscore=False)
+    __resource__ = EventResource(models.Event, convert_underscore=False)
 
     def _authorize(self, event, action):
         organization = sys_uuid.UUID(event.event_params["organization_uuid"])

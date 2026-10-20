@@ -194,6 +194,10 @@ deferred. They must later call this same API; they must not bypass its routing.
 
 ## Installation and configuration
 
+Mobile Event POST/GET responses omit `event_params.devices`; the durable event
+snapshot retains it for rendering and forwarding. Callers poll `uuid`, `status`
+and `errors`. Legacy email responses keep their original parameters.
+
 Upgrade the Notification and Workspace code before installing the push site
 manifests. Use `exordos build` and `exordos deploy` with immutable build output;
 keep database backups and review the generated manifest. Do not patch a running
@@ -230,6 +234,39 @@ aggregate parent-status view. Existing email and Zulip transports remain usable.
    Never put secret values in Git, manifest arguments, shell history, Workspace
    messages, screenshots or reports. File changes must restart the associated
    provider/worker so cached credentials are replaced.
+
+Render the site templates to plain YAML before installing them. For example,
+from the Notification checkout (all values below are non-secret):
+
+```sh
+python3 - <<'PY'
+from pathlib import Path
+from jinja2 import Environment, FileSystemLoader, StrictUndefined
+environment = Environment(loader=FileSystemLoader('exordos/manifests'),
+                          undefined=StrictUndefined)
+variables = dict(organization_uuid='<WORKSPACE_BACKEND_NODE_UUID>',
+                 protocol_kind='notification',
+                 notification_endpoint='https://<UPSTREAM_HOST>/api/workspace/notification')
+Path('rendered').mkdir(exist_ok=True)
+for name in ['push_source', 'mobile_push']:
+    Path(f'rendered/{name}.yaml').write_text(
+        environment.get_template(f'{name}.yaml.j2').render(**variables))
+PY
+exordos em elements install rendered/push_source.yaml
+exordos em elements install rendered/mobile_push.yaml
+```
+
+On the upstream, use `protocol_kind='firebase'` and `firebase_project_id` instead
+of `notification_endpoint`. Render the Workspace connector from its own checkout
+with the same environment and organization UUID. Review the YAML, install one
+manifest at a time, and wait for the runtime element and its resources to become
+`ACTIVE`; the CLI's installation acknowledgement alone is insufficient. Core
+dependency constraints use `X.Y.Z[-suffix]`, for example `1.2.8-dev`.
+
+Provision the sender credential before enabling the Workspace producer. During
+staged setup, leave the connector's `notification_endpoint` value empty. Once
+the provider is ready, apply the rendered manifest through the normal element
+edit/update operation; no registration revision or API version change is needed.
 
 Relay-only installations require this file, containing the **upstream** Core
 IAM service credentials generated in step 3:
@@ -311,3 +348,12 @@ References: [Firebase HTTP v1](https://firebase.google.com/docs/cloud-messaging/
 [FCM authorization](https://firebase.google.com/docs/cloud-messaging/auth-server),
 [RFC 9180](https://www.rfc-editor.org/rfc/rfc9180.html),
 [WorkManager releases](https://developer.android.com/jetpack/androidx/releases/work).
+
+
+Relay HTTP request and response bodies are always redacted, including when
+INFO/DEBUG logging is enabled or an upstream error echoes its input. The
+Notification API also omits request/response bodies from diagnostic logs.
+The same redacting, non-redirecting client also handles Core IAM login and
+refresh, including token responses. Methods, URLs and status codes remain
+available for troubleshooting. Do not
+add device tokens, credentials or encrypted event snapshots to log messages.
