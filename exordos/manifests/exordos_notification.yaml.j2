@@ -370,6 +370,13 @@ exports:
     link: "$dbaas.types.postgres.instances.$notification_cluster_pg"
   notification_cp:
     link: "$core.dns.domains.$local_domain.records.$notification_cp"
+
+  backend_node:
+    link: "$core.compute.nodes.$notification_cp"
+    kind: "resource"
+  event_type_read_permission:
+    link: "$core.iam.permissions.$event_type_read"
+    kind: "resource"
   mail_domain:
     link: "$core.vs.variables.$mail_domain"
   noreply_address:

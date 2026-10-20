@@ -1,0 +1,56 @@
+# Install on each Notification server accepting this installation's events.
+# organization_uuid is a non-secret stable Workspace backend node UUID.
+# Retrieve the generated service password only into KeePass/operator memory.
+name: "notification_push_source_{{ organization_uuid }}"
+description: "Authorized Workspace push source"
+schema_version: 1
+version: "{{ version | default('1.0.0') }}"
+api_version: "v1"
+requirements:
+  exordos_notification:
+    from_version: "1.2.8.dev0"
+resources:
+  $core.iam.permissions:
+    source_create:
+      name: "exordos_notification.source_{{ organization_uuid }}.create"
+    source_read:
+      name: "exordos_notification.source_{{ organization_uuid }}.read"
+  $core.iam.roles:
+    source:
+      name: "workspace-push-{{ organization_uuid }}"
+      project_id: null
+  $core.iam.permissionbinding:
+    create:
+      role: $core.iam.roles.$source:uuid
+      permission: $core.iam.permissions.$source_create:uuid
+      project_id: null
+    read:
+      role: $core.iam.roles.$source:uuid
+      permission: $core.iam.permissions.$source_read:uuid
+      project_id: null
+  $core.secret.passwords:
+    source_password:
+      name: "workspace-push-{{ organization_uuid }}"
+      project_id: "12345678-c625-4fee-81d5-f691897b8142"
+      constructor:
+        kind: plain
+      method: AUTO_HEX
+  $core.iam.users:
+    source:
+      username: "workspace-push-{{ organization_uuid }}"
+      first_name: Workspace
+      last_name: Push
+      email: "workspace-push-{{ organization_uuid }}@example.invalid"
+      password: $core.secret.passwords.$source_password:value
+  $core.iam.rolebinding:
+    source:
+      role: $core.iam.roles.$source:uuid
+      user: $core.iam.users.$source:uuid
+      project: null
+exports:
+  service_user:
+    link: "$core.iam.users.$source"
+    kind: resource
+  service_password:
+    link: "$core.secret.passwords.$source_password"
+    kind: resource

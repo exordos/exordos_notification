@@ -90,3 +90,10 @@ The notification service continues using its original database; switching it to
 the restored instance is a separate step. The restored instance has no backup
 policy of its own. `restore_from` is applied only when creating the instance;
 to repeat the restore, delete the restore element and install it again.
+
+## Encrypted mobile notifications
+
+Workspace mobile push uses ordinary Event, Template and Provider resources.
+A local `notification` protocol forwards encrypted events to an upstream
+`firebase` protocol on Orion. User transport selection remains in the
+Notification binding API. See [the complete contract and deployment guide](docs/mobile-push.md).

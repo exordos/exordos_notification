@@ -37,6 +37,10 @@ class EventRoute(routes.Route):
     __controller__ = controllers.EventController
 
 
+class BindingRoute(routes.Route):
+    __controller__ = controllers.BindingController
+
+
 class ApiEndpointRoute(routes.Route):
     """Handler for /v1.0/ endpoint"""
 
@@ -47,3 +51,4 @@ class ApiEndpointRoute(routes.Route):
     templates = routes.route(TemplateRoute)
     event_types = routes.route(EventTypeRoute)
     events = routes.route(EventRoute)
+    bindings = routes.route(BindingRoute)

@@ -15,8 +15,15 @@
 #    under the License.
 
 import enum
+import uuid
 
 GLOBAL_SERVICE_NAME = "exordos_notification"
+WORKSPACE_MESSAGE_CREATE = "workspace_message_create"
+WORKSPACE_MESSAGE_CANCELLED = "workspace_message_cancelled"
+PUSH_EVENT_TYPES = {
+    kind: uuid.uuid5(uuid.NAMESPACE_URL, f"urn:exordos:notification:{kind}")
+    for kind in (WORKSPACE_MESSAGE_CREATE, WORKSPACE_MESSAGE_CANCELLED)
+}
 
 
 class AlwaysActiveStatus(str, enum.Enum):

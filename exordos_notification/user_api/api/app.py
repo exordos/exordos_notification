@@ -21,6 +21,7 @@ from restalchemy.openapi import engines as openapi_engines
 from restalchemy.openapi import structures as openapi_structures
 
 from exordos_notification import version as app_version
+from exordos_notification.common.api.middlewares import auth as auth_mw
 from exordos_notification.common.api.middlewares import errors as errors_mw
 from exordos_notification.user_api.api import routes as app_routes
 from exordos_notification.user_api.api import versions
@@ -72,7 +73,7 @@ def build_wsgi_application(iam_engine_driver):
         ),
         [
             middlewares.configure_middleware(
-                iam_mw.GenesisCoreAuthMiddleware,
+                auth_mw.NotificationAuthMiddleware,
                 iam_engine_driver=iam_engine_driver,
                 skip_auth_endpoints=skip_auth_endpoints,
             ),
