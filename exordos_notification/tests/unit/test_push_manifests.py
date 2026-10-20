@@ -1,6 +1,7 @@
 # Copyright 2026 Genesis Corporation.
 # Licensed under the Apache License, Version 2.0 (the "License").
 import pathlib
+import re
 import uuid
 
 import jinja2
@@ -11,6 +12,23 @@ from exordos_notification.common import constants
 from exordos_notification.dm import models
 
 ROOT = pathlib.Path(__file__).parents[3] / "exordos/manifests"
+
+
+@pytest.mark.parametrize("filename", ["mobile_push.yaml.j2", "push_source.yaml.j2"])
+def test_dependencies_use_core_versions_instead_of_pep440(filename):
+    source = (
+        jinja2.Environment(loader=jinja2.FileSystemLoader(ROOT))
+        .get_template(filename)
+        .render(
+            protocol_kind="firebase",
+            organization_uuid=str(uuid.uuid4()),
+            firebase_project_id="synthetic-project",
+        )
+    )
+    manifest = yaml.safe_load(source)
+    for requirement in manifest["requirements"].values():
+        # Core accepts X.Y.Z[-suffix], while packaging.Version also accepts .dev0.
+        assert re.fullmatch(r"\d+\.\d+\.\d+(?:-.+)?", requirement["from_version"])
 
 
 @pytest.mark.parametrize("role", ["firebase", "notification"])
@@ -56,7 +74,7 @@ def test_push_only_installation_omits_mail_dependency_without_changing_email_def
     )
     manifest = yaml.safe_load(
         environment.get_template("exordos_notification.yaml.j2").render(
-            version="1.2.8.dev1",
+            version="1.2.8-dev+contract",
             images={
                 "exordos_notification": "https://images.example.com/notification.raw.zst"
             },
