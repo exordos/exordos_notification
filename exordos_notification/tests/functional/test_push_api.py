@@ -2,9 +2,12 @@
 #    Licensed under the Apache License, Version 2.0 (the "License"); you may
 #    not use this file except in compliance with the License.
 
+import pathlib
 import uuid
 
+import jinja2
 import requests
+import yaml
 
 from exordos_notification.dm import models
 from exordos_notification.tests.unit.test_push_transports import push_event
@@ -18,6 +21,53 @@ def source_headers(driver, payload):
             f"exordos_notification.source_{source}.create",
             f"exordos_notification.source_{source}.read",
         ]
+    )
+
+
+def test_deployed_source_role_can_submit_without_a_project_scope(http_server):
+    base, driver = http_server
+    event, _ = push_event()
+    payload = event.notification_event()
+    root = pathlib.Path(__file__).parents[3] / "exordos/manifests"
+    environment = jinja2.Environment(loader=jinja2.FileSystemLoader(root))
+    manifest = yaml.safe_load(
+        environment.get_template("push_source.yaml.j2").render(
+            organization_uuid=payload["event_params"]["organization_uuid"]
+        )
+    )
+    core_catalog = yaml.safe_load(
+        environment.get_template("exordos_notification.yaml.j2").render(
+            version="1.2.8-dev",
+            images={"exordos_notification": "https://example.com/image"},
+            enable_email=False,
+        )
+    )
+    permissions = {
+        name: spec["name"]
+        for name, spec in manifest["resources"]["$core.iam.permissions"].items()
+    }
+    for name, spec in manifest.get("imports", {}).items():
+        key = spec["link"].rsplit("$", 1)[1]
+        permissions["imports." + name] = core_catalog["resources"][
+            "$core.iam.permissions"
+        ][key]["name"]
+    granted = []
+    for binding in manifest["resources"]["$core.iam.permissionbinding"].values():
+        reference = binding["permission"]
+        key = reference.rsplit("$", 1)[1].split(":")[0]
+        granted.append(
+            permissions[("imports." if ".imports." in reference else "") + key]
+        )
+    headers = driver.headers(granted, project_scoped=False)
+    response = requests.post(
+        base + "/v1/events/", json=payload, headers=headers, timeout=5
+    )
+    assert response.status_code == 201, response.text
+    assert (
+        requests.get(
+            base + "/v1/events/" + payload["uuid"], headers=headers, timeout=5
+        ).status_code
+        == 200
     )
 
 

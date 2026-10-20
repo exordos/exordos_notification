@@ -209,8 +209,10 @@ aggregate parent-status view. Existing email and Zulip transports remain usable.
 2. Read the Workspace backend node UUID; use it as `organization_uuid` everywhere
    for this source. Keep that identity stable through updates.
 3. Install `exordos/manifests/push_source.yaml.j2` on the local Notification's
-   Core, passing that organization UUID. It creates one service account and only
-   `exordos_notification.source_<UUID>.create/read` permissions. Repeat on the
+   Core, passing that organization UUID. It creates one service account with
+   `exordos_notification.source_<UUID>.create/read` and the existing
+   `event_type.read` catalog permission, required when the service principal has
+   no project scope. Repeat on the
    upstream Core for the local relay. Each Core generates a separate password.
 4. Install the Workspace repository's `exordos/manifests/mobile_push.yaml.j2` in
    the local realm with the same UUID. It delivers a private IAM credential file,

@@ -9,6 +9,11 @@ api_version: "v1"
 requirements:
   exordos_notification:
     from_version: "1.2.8-dev"
+imports:
+  event_type_read:
+    element: "$exordos_notification"
+    kind: resource
+    link: "$core.iam.permissions.$event_type_read"
 resources:
   $core.iam.permissions:
     source_create:
@@ -20,6 +25,10 @@ resources:
       name: "workspace-push-{{ organization_uuid }}"
       project_id: null
   $core.iam.permissionbinding:
+    event_type_read:
+      role: $core.iam.roles.$source:uuid
+      permission: $notification_push_source_{{ organization_uuid }}.imports.$event_type_read:uuid
+      project_id: null
     create:
       role: $core.iam.roles.$source:uuid
       permission: $core.iam.permissions.$source_create:uuid

@@ -58,7 +58,9 @@ class TestIamDriver:
             "permissions": claims["test_permissions"],
         }
 
-    def headers(self, permissions=(), user_uuid=None, project_uuid=None):
+    def headers(
+        self, permissions=(), user_uuid=None, project_uuid=None, project_scoped=True
+    ):
         now = int(time.time())
         token = jwt.encode(
             {
@@ -70,7 +72,9 @@ class TestIamDriver:
                 "iat": now,
                 "auth_time": now,
                 "exp": now + 3600,
-                "test_project": str(project_uuid or uuid.uuid4()),
+                "test_project": str(project_uuid or uuid.uuid4())
+                if project_scoped
+                else None,
                 "test_permissions": list(permissions),
             },
             self.key,
