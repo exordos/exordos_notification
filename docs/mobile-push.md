@@ -202,6 +202,10 @@ Notification migration 0001 adds error JSON, inactive-token fingerprints and an
 aggregate parent-status view. Existing email and Zulip transports remain usable.
 
 1. Deploy the updated Workspace and Notification elements in the local realm.
+   A new push-only Notification can be built with `--manifest-var enable_email=false`
+   to omit mailaas, SMTP resources and Core email wiring. Existing email
+   installations keep the default `enable_email=true`; do not switch them to
+   push-only mode as part of this rollout.
 2. Read the Workspace backend node UUID; use it as `organization_uuid` everywhere
    for this source. Keep that identity stable through updates.
 3. Install `exordos/manifests/push_source.yaml.j2` on the local Notification's

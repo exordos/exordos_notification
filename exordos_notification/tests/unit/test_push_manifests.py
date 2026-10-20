@@ -45,3 +45,35 @@ def test_role_manifest_renders_real_protocol_and_template_models(role):
         }
         assert template["is_default"]
     assert "private_key" not in yaml.safe_dump(manifest)
+
+
+@pytest.mark.parametrize("enable_email", [True, False, "false", "default"])
+def test_push_only_installation_omits_mail_dependency_without_changing_email_default(
+    enable_email,
+):
+    environment = jinja2.Environment(
+        loader=jinja2.FileSystemLoader(ROOT), undefined=jinja2.StrictUndefined
+    )
+    manifest = yaml.safe_load(
+        environment.get_template("exordos_notification.yaml.j2").render(
+            version="1.2.8.dev1",
+            images={
+                "exordos_notification": "https://images.example.com/notification.raw.zst"
+            },
+            **({} if enable_email == "default" else {"enable_email": enable_email}),
+        )
+    )
+    resources = manifest["resources"]
+    if enable_email is True or enable_email == "default":
+        assert "mailaas" in manifest["requirements"]
+        assert (
+            "smtp_via_mailaas"
+            in resources["$exordos_notification.types.email.providers"]
+        )
+        assert "core_events_conf" in resources["$core.config.configs"]
+    else:
+        assert "mailaas" not in yaml.safe_dump(manifest)
+        assert "core_events_conf" not in resources["$core.config.configs"]
+        assert "$exordos_notification.types.email.providers" not in resources
+    assert "notification_cp" in resources["$core.compute.nodes"]
+    assert "backend_node" in manifest["exports"]

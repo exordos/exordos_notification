@@ -1,3 +1,4 @@
+{% set email_enabled = (enable_email | default(true) | string | lower) in ['true', '1', 'yes'] %}
 #    Copyright 2026 Genesis Corporation.
 #
 #    All Rights Reserved.
@@ -25,8 +26,10 @@ requirements:
     from_version: "0.0.0"
   dbaas:
     from_version: "2.2.4"
+{% if email_enabled %}
   mailaas:
     from_version: "0.0.0"
+{% endif %}
 
 resources:
 
@@ -146,6 +149,7 @@ resources:
         kind: plain
       method: AUTO_HEX
 
+{% if email_enabled %}
     notification_smtp_password:
       name: notification_smtp_password
       description: "SMTP account password for the notification mail relay"
@@ -174,6 +178,8 @@ resources:
       username: "smtp"
       password: $core.secret.passwords.$notification_smtp_password:value
       instance: $mailaas.types.mail.instances.$notification_mail:uuid
+
+{% endif %}
 
   # Compute
   $core.compute.nodes:
@@ -212,6 +218,7 @@ resources:
           IAM_CLIENT_UUID={$exordos_notification.imports.$var_iam_default_client_uuid:value}
           "
 
+{% if email_enabled %}
     # Wire core's IAM user-api to push events to this notification service.
     # Instead of coupling core to a VS variable, we deliver the stock gcl_sdk
     # HTTP event client configuration directly onto the core node(s) as config
@@ -286,6 +293,8 @@ resources:
   # they are installation-specific. Set them via the separate per-installation
   # manifest (see site_config.yaml.j2). Until set, smtp_via_mailaas will stay NEW.
 
+{% endif %}
+
   # DNS
   $exordos_notification.imports.$core_local_domain.records:
     notification_cp:
@@ -297,6 +306,7 @@ resources:
         name: "notification-cp"
         address: "$core.compute.nodes.$notification_cp:default_network:ipv4"
 
+{% if email_enabled %}
   # Notification EM resources — synced by EMSyncAgent into notification DB
   $exordos_notification.types.email.providers:
     smtp_via_mailaas:
@@ -325,6 +335,7 @@ resources:
   # installation-configurable content and live in the separate
   # site_config.yaml.j2 manifest, which imports the provider and event_type
   # exported below.
+{% endif %}
 
   # Browser management API. Internal unauthenticated event ingestion stays private.
 
@@ -377,6 +388,7 @@ exports:
   event_type_read_permission:
     link: "$core.iam.permissions.$event_type_read"
     kind: "resource"
+{% if email_enabled %}
   mail_domain:
     link: "$core.vs.variables.$mail_domain"
   noreply_address:
@@ -385,6 +397,7 @@ exports:
     link: "$exordos_notification.types.email.providers.$smtp_via_mailaas"
   email_confirmation_event_type:
     link: "$exordos_notification.types.email.event_types.$email_confirmation"
+{% endif %}
 
 imports:
   core_lb:
@@ -415,7 +428,9 @@ imports:
     element: "$core"
     kind: "resource"
     link: "$core.vs.variables.$iam_default_client_id"
+{% if email_enabled %}
   exim4_1:
     element: "$mailaas"
     kind: "resource"
     link: "$mailaas.types.mail.versions.$exim4_1"
+{% endif %}
