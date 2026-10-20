@@ -1,5 +1,6 @@
 # Copyright 2026 Genesis Corporation.
 # Licensed under the Apache License, Version 2.0 (the "License").
+import ipaddress
 import pathlib
 import re
 import uuid
@@ -13,6 +14,25 @@ from exordos_notification.common import constants
 from exordos_notification.dm import models
 
 ROOT = pathlib.Path(__file__).parents[3] / "exordos/manifests"
+
+
+def test_push_runbook_uses_placeholders_for_private_deployment_addresses():
+    source = (ROOT.parents[1] / "docs/mobile-push.md").read_text()
+    private_count = 0
+    for candidate in re.findall(r"\b(?:\d{1,3}\.){3}\d{1,3}\b", source):
+        try:
+            address = ipaddress.ip_address(candidate)
+        except ValueError:
+            continue
+        if (
+            address.is_private
+            and not address.is_loopback
+            and not address.is_unspecified
+        ):
+            private_count += 1
+    assert private_count == 0, (
+        "Keep assigned deployment addresses in private test records"
+    )
 
 
 def test_source_account_email_passes_the_core_iam_field_validator():

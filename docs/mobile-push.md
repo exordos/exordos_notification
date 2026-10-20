@@ -293,6 +293,16 @@ does not grant sending access. Do not distribute the service-account file to
 customer realms. Firebase project/IAM/key changes require operator approval.
 Android builds consume the matching client config from a private, ignored file.
 
+If a sender credential is lost, identify its user-managed service-account key in
+the matching Firebase project and disable that key. Keep Google-managed keys,
+unrelated service accounts, Android app configuration and device tokens intact.
+Store a replacement sender credential in private credential storage and the
+upstream service only, then verify sending and the old key's disabled state.
+Never paste either credential into an event, log, review or test record.
+Disabling a key does not revoke access tokens already issued from it. Immediate
+revocation of those tokens requires disabling the service account and affects
+every workload using that account; inspect its usage before taking that step.
+
 The optional gateway exposes the Event API at:
 
 ```text
@@ -333,19 +343,20 @@ aggregation; exact-token invalidation; native message/read transaction hooks;
 transient retries; and an instrumented physical-device offline receipt test.
 The fixture's private keys are public test material and must never be deployed.
 
-Full acceptance requires the managed platform on `192.168.100.69`, native
+Full acceptance requires an operator-approved managed development environment, native
 Workspace with no active Zulip integration, and a real FCM send to the connected
 Android device. Verify foreground/background receipt, duplicate suppression,
 authentic and out-of-order cancellation, logout, token replacement, and cold/warm
 clicks into the correct account/chat/message. Test with the Workspace backend
 unreachable during rendering, then restore connectivity for chat loading.
 A successful mock or offline handler test does not establish real FCM delivery.
-Keep the existing `CASSI` and `CASSI-v2` VMs running throughout lab operations.
+Preserve protected workloads according to the environment's operating instructions.
 Record deployed artifact versions, executed checks, unavailable checks, and
 review PRs separately. No Google Play publication is part of this workflow.
 
 References: [Firebase HTTP v1](https://firebase.google.com/docs/cloud-messaging/send/v1-api),
 [FCM authorization](https://firebase.google.com/docs/cloud-messaging/auth-server),
+[service-account key disabling](https://docs.cloud.google.com/iam/docs/keys-disable-enable),
 [RFC 9180](https://www.rfc-editor.org/rfc/rfc9180.html),
 [WorkManager releases](https://developer.android.com/jetpack/androidx/releases/work).
 
