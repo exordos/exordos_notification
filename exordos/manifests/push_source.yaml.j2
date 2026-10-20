@@ -40,7 +40,7 @@ resources:
       username: "workspace-push-{{ organization_uuid }}"
       first_name: Workspace
       last_name: Push
-      email: "workspace-push-{{ organization_uuid }}@example.invalid"
+      email: "noreply+workspace-push-{{ organization_uuid }}@exordos.com"
       password: $core.secret.passwords.$source_password:value
   $core.iam.rolebinding:
     source:

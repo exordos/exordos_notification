@@ -7,11 +7,22 @@ import uuid
 import jinja2
 import pytest
 import yaml
+from restalchemy.dm import types
 
 from exordos_notification.common import constants
 from exordos_notification.dm import models
 
 ROOT = pathlib.Path(__file__).parents[3] / "exordos/manifests"
+
+
+def test_source_account_email_passes_the_core_iam_field_validator():
+    source = (
+        jinja2.Environment(loader=jinja2.FileSystemLoader(ROOT))
+        .get_template("push_source.yaml.j2")
+        .render(organization_uuid=str(uuid.uuid4()))
+    )
+    account = yaml.safe_load(source)["resources"]["$core.iam.users"]["source"]
+    assert types.Email(max_length=128).validate(account["email"])
 
 
 @pytest.mark.parametrize("filename", ["mobile_push.yaml.j2", "push_source.yaml.j2"])
