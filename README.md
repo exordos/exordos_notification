@@ -1,12 +1,11 @@
 # exordos_notification
 
-Platform notification service for Exordos. Sends email confirmations and other transactional emails via a dedicated mailaas relay.
+Platform notification service for Exordos. The base element runs the service and its database. Install email or mobile push as separate transport elements.
 
 ## Requirements
 
 - `core` ≥ 0.0.0
 - `dbaas` ≥ 2.2.4
-- `mailaas` ≥ 0.0.0
 
 ## Installation
 
@@ -16,11 +15,25 @@ Platform notification service for Exordos. Sends email confirmations and other t
 exordos em elements install exordos_notification
 ```
 
-This installs the notification service, its database, mail relay instance, IAM users and permissions. Wait for the element to become `ACTIVE`.
+This installs the notification service, its database, IAM users and permissions. Wait for the element to become `ACTIVE`. No mail relay or push provider is installed by the base element.
 
-### 2. Configure site-specific settings
+### 2. Install the optional email transport
 
-`exordos_notification` creates a VS variable `notification_noreply_address` with no default value — it is installation-specific (depends on your mail domain). Until it is set, the SMTP provider resource stays `NEW` and no emails are sent.
+With `mailaas` available, install email separately:
+
+```bash
+exordos em elements install notification_email
+```
+
+This adds the SMTP relay/account, sender variables, email confirmation event type
+and Core registration-event configuration. A push-only installation omits this
+element and does not need `mailaas`. Mobile push is configured separately with
+`notification_relay.yaml.j2` or `notification_firebase.yaml.j2`, as described in
+the [push guide](docs/mobile-push.md).
+
+### 3. Configure email site settings
+
+`notification_email` creates a VS variable `notification_noreply_address` with no default value — it is installation-specific (depends on your mail domain). Until it is set, the SMTP provider resource stays `NEW` and no emails are sent.
 
 Copy the example manifest and fill in your noreply address:
 
@@ -31,7 +44,17 @@ cp exordos/manifests/site_config.yaml.j2.example exordos/manifests/site_config.y
 exordos em elements install exordos/manifests/site_config.yaml.j2
 ```
 
-The `notification_site_config` element must be installed **once per deployment** after `exordos_notification` is active. Reinstalling `exordos_notification` will not overwrite it.
+The `notification_site_config` element must be installed **once per deployment** after `notification_email` is active. Reinstalling the base or email element will not overwrite it.
+
+### Existing combined-element installations
+
+The previous base manifest owned email resources and exported the sender variables
+and email provider. This split changes their element ownership. Do not update a
+combined installation in place or remove its existing email resources: its site
+configuration still imports the old exports. Preserve the installed manifest and
+SMTP/database state. A data-preserving ownership/import migration must be tested
+on a copy of that installation before rollout. The new element layout is ready
+for fresh installations; the combined-installation migration remains **NOT RUN**.
 
 ## Architecture
 
@@ -42,8 +65,8 @@ IAM (core)  ──event──►  exordos_notification  ──SMTP──►  mai
 ```
 
 - **notification-cp** — the notification control plane VM (runs the notification service)
-- **mailaas relay** — a dedicated `mail.instances` provisioned by metapaas; the notification service authenticates as the `smtp` account
-- **VS variables** — `notification_noreply_address` (set via `site_config`) and `notification_endpoint` (auto-set by the manifest)
+- **notification_email** — optional email transport; its mailaas relay is a dedicated `mail.instances` provisioned by metapaas; the notification service authenticates as the `smtp` account
+- **VS variables** — email sender/domain values belong to `notification_email` and are set via `site_config`.
 
 ## Optional PostgreSQL backups
 

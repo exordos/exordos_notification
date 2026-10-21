@@ -224,10 +224,13 @@ Notification migration 0001 adds error JSON, inactive-token fingerprints and an
 aggregate parent-status view. Existing email and Zulip transports remain usable.
 
 1. Deploy the updated Workspace and Notification elements in the local realm.
-   A new push-only Notification can be built with `--manifest-var enable_email=false`
-   to omit mailaas, SMTP resources and Core email wiring. Existing email
-   installations keep the default `enable_email=true`; do not switch them to
-   push-only mode as part of this rollout.
+   The base `exordos_notification` element has no transport dependencies.
+   Install `notification_email` separately when SMTP and Core registration email
+   are needed; push-only installations omit it. Push remains the separate
+   forwarding or Firebase element below. There is no email build flag.
+   For an older combined email installation, follow the migration gate in the
+   [installation guide](../README.md#existing-combined-element-installations)
+   before changing the base manifest; do not remove existing mail resources.
 2. Read the Workspace backend node UUID; use it as `organization_uuid` everywhere
    for this source. Keep that identity stable through updates.
 3. Install `exordos/manifests/push_source.yaml.j2` on the local Notification's
@@ -240,10 +243,10 @@ aggregate parent-status view. Existing email and Zulip transports remain usable.
    the local realm with the same UUID. It delivers a private IAM credential file,
    enables the existing worker's Notification endpoint, and adds an optional
    gateway route. The base configuration keeps the stable installation UUID.
-5. Install this repository's `exordos/manifests/mobile_push.yaml.j2` locally with
-   `protocol_kind=notification`, that local UUID, and the upstream HTTPS
-   `notification_endpoint`.
-6. On Orion, install the same transport manifest with `protocol_kind=firebase`,
+5. Install `exordos/manifests/notification_relay.yaml.j2` locally with that
+   local UUID and the upstream HTTPS `notification_endpoint`. This element needs
+   only upstream IAM credentials and has no Firebase configuration.
+6. On Orion, install `exordos/manifests/notification_firebase.yaml.j2` with
    Orion's local Workspace UUID and `firebase_project_id`. Forwarded customer
    UUIDs skip Orion's user binding lookup; Orion's own notifications still use
    local preferences.
@@ -263,23 +266,30 @@ from jinja2 import Environment, FileSystemLoader, StrictUndefined
 environment = Environment(loader=FileSystemLoader('exordos/manifests'),
                           undefined=StrictUndefined)
 variables = dict(organization_uuid='<WORKSPACE_BACKEND_NODE_UUID>',
-                 protocol_kind='notification',
                  notification_endpoint='https://<UPSTREAM_HOST>/api/workspace/notification')
 Path('rendered').mkdir(exist_ok=True)
-for name in ['push_source', 'mobile_push']:
+for name in ['push_source', 'notification_relay']:
     Path(f'rendered/{name}.yaml').write_text(
         environment.get_template(f'{name}.yaml.j2').render(**variables))
 PY
 exordos em elements install rendered/push_source.yaml
-exordos em elements install rendered/mobile_push.yaml
+exordos em elements install rendered/notification_relay.yaml
 ```
 
-On the upstream, use `protocol_kind='firebase'` and `firebase_project_id` instead
-of `notification_endpoint`. Render the Workspace connector from its own checkout
+On the upstream, render `notification_firebase.yaml.j2` with `firebase_project_id`
+instead of `notification_endpoint`. Render the Workspace connector from its own checkout
 with the same environment and organization UUID. Review the YAML, install one
 manifest at a time, and wait for the runtime element and its resources to become
 `ACTIVE`; the CLI's installation acknowledgement alone is insufficient. Core
 dependency constraints use `X.Y.Z[-suffix]`, for example `1.2.8-dev`.
+
+Install only one of these two transport elements per Notification service: both
+provide the same event-type UUIDs/default mobile templates. The service forwards
+through the installed relay element or sends through the installed Firebase
+element. No protocol-selection build flag is used. Older deployments of the
+combined `notification_mobile_push` element must retain their installed manifest
+until their resources/imports are migrated; changing the element owner is not an
+in-place transport toggle.
 
 Provision the sender credential before enabling the Workspace producer. During
 staged setup, leave the connector's `notification_endpoint` value empty. Once

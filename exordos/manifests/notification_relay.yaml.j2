@@ -1,7 +1,6 @@
-# Site configuration. Private credential files are delivered separately by the
-# operator as mode 0600 Core config resources. Never put credentials in variables.
-# protocol_kind: firebase on Orion, notification on a forwarding installation.
-name: "notification_mobile_push"
+# Site-specific forwarding transport. Only upstream IAM credentials are needed here.
+# Deliver private credential files separately as restricted Core config resources.
+name: "notification_relay"
 description: "Workspace mobile push transport"
 schema_version: 1
 version: "{{ version | default('1.0.0') }}"
@@ -22,7 +21,7 @@ resources:
       mode: "0600"
       target:
         kind: node
-        node: $notification_mobile_push.imports.$backend_node:uuid
+        node: $notification_relay.imports.$backend_node:uuid
       on_change:
         kind: shell
         command: systemctl restart exordos-notification-user-api exordos-notification-builder-agent exordos-notification-mail-agent
@@ -39,15 +38,11 @@ resources:
       description: "Encrypted Workspace mobile push"
       status: ACTIVE
       protocol:
-        kind: "{{ protocol_kind }}"
-{% if protocol_kind == 'firebase' %}
-        firebase_project_id: "{{ firebase_project_id }}"
-        credentials_file: /etc/exordos_notification/firebase-service-account.json
-        ttl_seconds: 3600
-{% else %}
+        kind: "notification"
+
         endpoint: "{{ notification_endpoint }}"
         auth_file: /etc/exordos_notification/mobile-push-auth.json
-{% endif %}
+
 
   $exordos_notification.types.email.event_types:
     workspace_message_create:
@@ -62,15 +57,26 @@ resources:
       status: ACTIVE
 
   $exordos_notification.types.email.templates:
-{% for kind in ['workspace_message_create', 'workspace_message_cancelled'] %}
-    {{ kind }}:
+
+    workspace_message_create:
       project_id: "12345678-c625-4fee-81d5-f691897b8142"
-      name: "{{ kind }} mobile push"
+      name: "workspace_message_create mobile push"
       status: ACTIVE
       provider: $exordos_notification.types.email.providers.$mobile_push:uuid
-      event_type: $exordos_notification.types.email.event_types.${{ kind }}:uuid
+      event_type: $exordos_notification.types.email.event_types.$workspace_message_create:uuid
       is_default: true
       params: {}
       content:
-        kind: "{{ 'mobile_push' if protocol_kind == 'firebase' else 'notification' }}"
-{% endfor %}
+        kind: "notification"
+
+    workspace_message_cancelled:
+      project_id: "12345678-c625-4fee-81d5-f691897b8142"
+      name: "workspace_message_cancelled mobile push"
+      status: ACTIVE
+      provider: $exordos_notification.types.email.providers.$mobile_push:uuid
+      event_type: $exordos_notification.types.email.event_types.$workspace_message_cancelled:uuid
+      is_default: true
+      params: {}
+      content:
+        kind: "notification"
+

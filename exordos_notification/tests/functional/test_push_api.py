@@ -6,11 +6,57 @@ import pathlib
 import uuid
 
 import jinja2
+import pytest
 import requests
 import yaml
 
 from exordos_notification.dm import models
 from exordos_notification.tests.unit.test_push_transports import push_event
+
+
+@pytest.mark.parametrize("resource", ["providers", "templates", "event_types"])
+def test_authenticated_management_catalog_keeps_marker_pagination(
+    http_server, resource
+):
+    base, driver = http_server
+    project = uuid.uuid4()
+    provider = models.Provider(
+        project_id=project,
+        name="Pagination",
+        protocol=models.SimpleSmtpProtocol(
+            host="smtp.example.com", port=25, noreply_email_address="sender@example.com"
+        ),
+    )
+    provider.insert()
+    event_type = models.EventType(project_id=project)
+    event_type.insert()
+    for name in ("First page", "Second page"):
+        models.Template(
+            project_id=project,
+            name=name,
+            params={},
+            event_type=event_type,
+            provider=provider,
+            content=models.EmailContent(title=name),
+        ).insert()
+    permission = {
+        "providers": "provider",
+        "templates": "template",
+        "event_types": "event_type",
+    }[resource]
+    headers = driver.headers([f"exordos_notification.{permission}.read"])
+    url = f"{base}/v1/{resource}/"
+    first = requests.get(url, params={"page_limit": 1}, headers=headers, timeout=5)
+    assert first.status_code == 200, first.text
+    assert len(first.json()) == 1
+    assert first.headers["X-Pagination-Limit"] == "1"
+    marker = first.headers["X-Pagination-Marker"]
+    assert marker == first.json()[0]["uuid"]
+    second = requests.get(
+        url, params={"page_limit": 1, "page_marker": marker}, headers=headers, timeout=5
+    )
+    assert second.status_code == 200, second.text
+    assert all(row["uuid"] != marker for row in second.json())
 
 
 def source_headers(driver, payload):
@@ -39,7 +85,6 @@ def test_deployed_source_role_can_submit_without_a_project_scope(http_server):
         environment.get_template("exordos_notification.yaml.j2").render(
             version="1.2.8-dev",
             images={"exordos_notification": "https://example.com/image"},
-            enable_email=False,
         )
     )
     permissions = {
