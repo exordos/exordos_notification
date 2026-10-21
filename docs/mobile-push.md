@@ -12,6 +12,13 @@ upstream Notification -- firebase protocol --> FCM -- data payload --> Android
 Android -- decrypt locally --> system notification -- click --> saved account and chat
 ```
 
+The server/FCM delivery lifetime is at most one hour. Android keeps received
+unread notifications and their authenticated routes without an age deadline.
+It stores only routing and receipt decisions on disk; restored cards use a generic
+preview because decrypted text stays in process memory. Workspace removes expired
+ciphertext/device snapshots but retains minimal delivery routes so later reads or
+deletions can cancel an existing notification, including one shown weeks earlier.
+
 A local Notification chooses the user's bound templates, falling back to the
 published defaults. A forwarding template has `content.kind=notification` and
 passes the complete Event unchanged. On Orion, the Firebase template has
@@ -56,6 +63,13 @@ push key and that connection's notifications. Registration and logout are
 serialized. If the network is unavailable, server-side removal cannot be
 confirmed; removing the local key still prevents further decryption/display.
 Other accounts on the same phone retain their own keys and registrations.
+
+The upstream Notification relay endpoint must use HTTPS; cleartext endpoints are
+rejected before credentials are loaded or an authenticated request is sent.
+The relay does not follow redirects, including POST redirects that could resend
+device addresses outside TLS. Configure the final upstream URL directly.
+User-exchange API responses keep the original v1 `user_id` field alongside the
+canonical `user_uuid`; new event producers use `user_uuid`.
 
 ## Events and encryption
 
@@ -135,10 +149,13 @@ The action, recipient and click route are authenticated. A cancellation is a new
 Event UUID and the cancellation EventType, retaining the message route and
 recipient and encrypting `{}` separately. Repeated reads reuse its deterministic
 UUID. Android decrypts and authenticates cancellations before removing a
-notification. A local tombstone suppresses delayed creates for that message;
-event UUIDs suppress duplicates. Receipt records expire after two hours, longer
-than the maximum one-hour FCM lifetime. No decrypted preview is persisted in
-receipt records or logs.
+notification. Android deduplicates each message within its saved connection,
+owner and project. Received unread routes and read/delete/dismiss decisions stay
+durable; a tap or failed navigation does not discard an unread route. Only
+transient read/delete guards for messages without received pushes expire after
+the existing one-hour delivery window. Old read-history pages do not create
+permanent receipt rows. No decrypted preview is persisted in receipt records or
+logs.
 
 ## Backend queue and delivery
 
@@ -146,7 +163,8 @@ Native fanout writes the encrypted snapshot into `messenger_push_outbox` in its
 existing database transaction. It uses existing membership, unread, stream mute,
 topic override and mention rules, skips the author and historical imports, and
 does not push stale messages older than one hour. Read events for messages,
-topics and streams enqueue cancellation only for messages with a push snapshot.
+topics and streams, and message deletion, enqueue cancellation for recorded push
+delivery routes even after their original ciphertext snapshot has been removed.
 
 The existing primary Messenger worker processes the outbox; projection-only
 workers remain independent. Retries reuse the same UUID, ciphertext and initial
