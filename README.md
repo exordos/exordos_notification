@@ -90,3 +90,11 @@ The notification service continues using its original database; switching it to
 the restored instance is a separate step. The restored instance has no backup
 policy of its own. `restore_from` is applied only when creating the instance;
 to repeat the restore, delete the restore element and install it again.
+
+## Browser management API
+
+The element publishes providers, event types, and templates through the core
+load balancer at `/api/notification/v1/{providers,event_types,templates}/`.
+These endpoints require an IAM token. The route preserves the public prefix
+for resource links and forwards requests to the notification control plane on
+port 8080. Internal event ingestion is not published by this route.
