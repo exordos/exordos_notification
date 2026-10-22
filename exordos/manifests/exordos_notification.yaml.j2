@@ -209,6 +209,7 @@ resources:
           GC_PG_ENDPOINTS={$dbaas.types.postgres.instances.$notification_cluster_pg:join(ipsv4)}
           GC_HS256_JWKS_ENCRYPTION_KEY={$exordos_notification.imports.$var_hs256_jwks_encryption_key:value}
           AUDIENCE={$exordos_notification.imports.$var_iam_default_client_id:value}
+          IAM_CLIENT_UUID={$exordos_notification.imports.$var_iam_default_client_uuid:value}
           "
 
     # Wire core's IAM user-api to push events to this notification service.
@@ -399,6 +400,10 @@ imports:
     element: "$core"
     kind: "resource"
     link: "$core.vs.variables.$hs256_jwks_encryption_key"
+  var_iam_default_client_uuid:
+    element: "$core"
+    kind: "resource"
+    link: "$core.vs.variables.$iam_default_client_uuid"
   var_iam_default_client_id:
     element: "$core"
     kind: "resource"

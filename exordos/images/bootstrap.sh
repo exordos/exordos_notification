@@ -37,6 +37,7 @@ export GC_PG_PASS="${GC_PG_PASS:-notification}"
 export GC_PG_DB="${GC_PG_DB:-notification_db}"
 export GC_PG_ENDPOINTS="${GC_PG_ENDPOINTS:-}"
 export AUDIENCE="${AUDIENCE:-}"
+export IAM_CLIENT_UUID="${IAM_CLIENT_UUID:-}"
 
 # Wait for GC_PG_ENDPOINTS to be available
 while [ -z "$GC_PG_ENDPOINTS" ]; do
