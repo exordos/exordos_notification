@@ -35,7 +35,10 @@ class ApiEndpointController(ra_controllers.RoutesListController):
     __TARGET_PATH__ = "/v1/"
 
 
-class ProviderController(iam_controllers.PolicyBasedController):
+class ProviderController(
+    iam_controllers.PolicyBasedController,
+    ra_controllers.BaseResourceControllerPaginated,
+):
     __policy_service_name__ = "exordos_notification"
     __policy_name__ = "provider"
 
@@ -44,7 +47,10 @@ class ProviderController(iam_controllers.PolicyBasedController):
     )
 
 
-class TemplateController(iam_controllers.PolicyBasedController):
+class TemplateController(
+    iam_controllers.PolicyBasedController,
+    ra_controllers.BaseResourceControllerPaginated,
+):
     __policy_service_name__ = "exordos_notification"
     __policy_name__ = "template"
 
@@ -53,7 +59,10 @@ class TemplateController(iam_controllers.PolicyBasedController):
     )
 
 
-class EventTypeController(iam_controllers.PolicyBasedController):
+class EventTypeController(
+    iam_controllers.PolicyBasedController,
+    ra_controllers.BaseResourceControllerPaginated,
+):
     __policy_service_name__ = "exordos_notification"
     __policy_name__ = "event_type"
 
