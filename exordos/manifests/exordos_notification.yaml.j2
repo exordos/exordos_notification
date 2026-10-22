@@ -209,6 +209,7 @@ resources:
           GC_PG_ENDPOINTS={$dbaas.types.postgres.instances.$notification_cluster_pg:join(ipsv4)}
           GC_HS256_JWKS_ENCRYPTION_KEY={$exordos_notification.imports.$var_hs256_jwks_encryption_key:value}
           AUDIENCE={$exordos_notification.imports.$var_iam_default_client_id:value}
+          IAM_CLIENT_UUID={$exordos_notification.imports.$var_iam_default_client_uuid:value}
           "
 
     # Wire core's IAM user-api to push events to this notification service.
@@ -325,6 +326,45 @@ resources:
   # site_config.yaml.j2 manifest, which imports the provider and event_type
   # exported below.
 
+  # Browser management API. Internal unauthenticated event ingestion stays private.
+
+  $exordos_notification.imports.$core_lb.backend_pools:
+    core_lb_notification_backend_http:
+      project_id: "12345678-c625-4fee-81d5-f691897b8142"
+      parent: $exordos_notification.imports.$core_lb:uuid
+      endpoints:
+        - kind: host
+          host: $core.compute.nodes.$notification_cp:default_network:ipv4
+          port: 8080
+          weight: 1
+  $exordos_notification.imports.$core_lb_http_vhost.routes:
+    core_lb_notification_route:
+      project_id: "12345678-c625-4fee-81d5-f691897b8142"
+      parent: $exordos_notification.imports.$core_lb_http_vhost:uuid
+      condition:
+        kind: regex
+        value: "^/api/notification/v1/(providers|event_types|templates)(/.*)?$"
+        allowed_ips:
+          - 0.0.0.0/0
+        actions:
+          - kind: backend
+            pool: $core.network.lb.$core_lb.backend_pools.$core_lb_notification_backend_http:uuid
+            protocol:
+              kind: http
+        modifiers:
+          - kind: auto_header
+            headers:
+              - 'Host'
+              - 'X-Forwarded-For'
+              - 'X-Forwarded-Port'
+              - 'X-Forwarded-Proto'
+          - kind: set_header
+            name: X-Forwarded-Prefix
+            value: /api/notification
+          - kind: rewrite_url
+            regex: "^/api/notification/(.*)"
+            replacement: "/$1"
+
 exports:
   notification_cluster_pg:
     link: "$dbaas.types.postgres.instances.$notification_cluster_pg"
@@ -340,6 +380,14 @@ exports:
     link: "$exordos_notification.types.email.event_types.$email_confirmation"
 
 imports:
+  core_lb:
+    element: "$core"
+    kind: "resource"
+    link: "$core.network.lb.$core_lb"
+  core_lb_http_vhost:
+    element: "$core"
+    kind: "resource"
+    link: "$core.network.lb.$core_lb.vhosts.$core_lb_core_http"
   pg18:
     element: "$dbaas"
     kind: "resource"
@@ -352,6 +400,10 @@ imports:
     element: "$core"
     kind: "resource"
     link: "$core.vs.variables.$hs256_jwks_encryption_key"
+  var_iam_default_client_uuid:
+    element: "$core"
+    kind: "resource"
+    link: "$core.vs.variables.$iam_default_client_uuid"
   var_iam_default_client_id:
     element: "$core"
     kind: "resource"
