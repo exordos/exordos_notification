@@ -326,6 +326,8 @@ resources:
   # exported below.
 
 exports:
+  notification_cluster_pg:
+    link: "$dbaas.types.postgres.instances.$notification_cluster_pg"
   mail_domain:
     link: "$core.vs.variables.$mail_domain"
   noreply_address:

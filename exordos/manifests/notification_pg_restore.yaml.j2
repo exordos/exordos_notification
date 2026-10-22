@@ -1,0 +1,80 @@
+# A new PostgreSQL instance started from the backups of notification_pg_backup.
+# restore_from is taken on creation only: to restore again, delete this
+# element and install it anew. See exordos_db/docs/postgresql.md.
+name: "notification_pg_restore"
+description: "Notification PostgreSQL instance restored from backups"
+schema_version: 1
+version: "{{ version }}"
+api_version: "v1"
+
+requirements:
+  core:
+    from_version: "0.0.0"
+  dbaas:
+    from_version: "2.6.2"
+  communal_s3:
+    from_version: "0.0.0"
+  exordos_notification:
+    from_version: "0.0.0"
+  notification_pg_backup:
+    from_version: "0.0.0"
+
+resources:
+
+  $dbaas.types.postgres.instances:
+    notification_pg_restored:
+      name: "notification-pg-restored"
+      project_id: "12345678-c625-4fee-81d5-f691897b8142"
+      nodes_number: 1
+      cpu: 1
+      ram: 2048
+      # The same major version and room for the data of the source
+      disk_size: 20
+      version: $notification_pg_restore.imports.$pg18:uuid
+      restore_from:
+        kind: s3
+        endpoint: f"http://{$notification_pg_restore.imports.$communal_s3:join(ipsv4)}:9000"
+        bucket: $notification_pg_restore.imports.$bucket:name
+        access_key: $notification_pg_restore.imports.$access_key:value
+        secret_key: $notification_pg_restore.imports.$secret_key:value
+        encryption_key: $notification_pg_restore.imports.$encryption_key:value
+        # Use the source cluster UUID as the pgBackRest stanza.
+        stanza: $notification_pg_restore.imports.$source:uuid
+        # The end of the archive; a moment instead:
+        #   target: {kind: time, time: "2026-09-26T10:30:00Z"}
+        target:
+          kind: latest
+
+imports:
+  communal_s3:
+    element: "$communal_s3"
+    kind: "resource"
+    link: "$s3aas.types.s3.instances.$communal_s3"
+  source:
+    element: "$exordos_notification"
+    kind: "resource"
+    link: "$dbaas.types.postgres.instances.$notification_cluster_pg"
+  bucket:
+    element: "$notification_pg_backup"
+    kind: "resource"
+    link: "$s3aas.types.s3.instances.$communal_s3.buckets.$notification_pg_backups"
+  access_key:
+    element: "$notification_pg_backup"
+    kind: "resource"
+    link: "$core.secret.passwords.$notification_pg_backup_access_key"
+  secret_key:
+    element: "$notification_pg_backup"
+    kind: "resource"
+    link: "$core.secret.passwords.$notification_pg_backup_secret_key"
+  encryption_key:
+    element: "$notification_pg_backup"
+    kind: "resource"
+    link: "$core.secret.passwords.$notification_pg_backup_encryption_key"
+  pg18:
+    element: "$dbaas"
+    kind: "resource"
+    link: "$dbaas.types.postgres.versions.$pg18"
+
+exports:
+  instance:
+    link: "$dbaas.types.postgres.instances.$notification_pg_restored"
