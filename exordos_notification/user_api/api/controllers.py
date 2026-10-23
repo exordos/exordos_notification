@@ -14,7 +14,6 @@
 #    License for the specific language governing permissions and limitations
 #    under the License.
 
-from gcl_iam.api import controllers as iam_controllers
 from restalchemy.api import controllers as ra_controllers
 from restalchemy.api import resources
 
@@ -35,37 +34,19 @@ class ApiEndpointController(ra_controllers.RoutesListController):
     __TARGET_PATH__ = "/v1/"
 
 
-class ProviderController(
-    iam_controllers.PolicyBasedController,
-    ra_controllers.BaseResourceControllerPaginated,
-):
-    __policy_service_name__ = "exordos_notification"
-    __policy_name__ = "provider"
-
+class ProviderController(ra_controllers.BaseResourceControllerPaginated):
     __resource__ = resources.ResourceByRAModel(
         models.Provider, convert_underscore=False
     )
 
 
-class TemplateController(
-    iam_controllers.PolicyBasedController,
-    ra_controllers.BaseResourceControllerPaginated,
-):
-    __policy_service_name__ = "exordos_notification"
-    __policy_name__ = "template"
-
+class TemplateController(ra_controllers.BaseResourceControllerPaginated):
     __resource__ = resources.ResourceByRAModel(
         models.Template, convert_underscore=False
     )
 
 
-class EventTypeController(
-    iam_controllers.PolicyBasedController,
-    ra_controllers.BaseResourceControllerPaginated,
-):
-    __policy_service_name__ = "exordos_notification"
-    __policy_name__ = "event_type"
-
+class EventTypeController(ra_controllers.BaseResourceControllerPaginated):
     __resource__ = resources.ResourceByRAModel(
         models.EventType, convert_underscore=False
     )
