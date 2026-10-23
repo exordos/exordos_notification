@@ -21,6 +21,7 @@ from restalchemy.openapi import engines as openapi_engines
 from restalchemy.openapi import structures as openapi_structures
 
 from exordos_notification import version as app_version
+from exordos_notification.common.api.middlewares import auth as auth_mw
 from exordos_notification.common.api.middlewares import errors as errors_mw
 from exordos_notification.user_api.api import routes as app_routes
 from exordos_notification.user_api.api import versions
@@ -64,6 +65,12 @@ def get_openapi_engine():
     return openapi_engine
 
 
+class MetadataOnlyLoggingMiddleware(logging_mw.LoggingMiddleware):
+    def _truncate_body(self, body, max_size=None):
+        # Mobile event bodies contain device tokens and encrypted snapshots.
+        return "[REDACTED]" if body is not None else None
+
+
 def build_wsgi_application(iam_engine_driver):
     return middlewares.attach_middlewares(
         applications.OpenApiApplication(
@@ -72,11 +79,11 @@ def build_wsgi_application(iam_engine_driver):
         ),
         [
             middlewares.configure_middleware(
-                iam_mw.GenesisCoreAuthMiddleware,
+                auth_mw.NotificationAuthMiddleware,
                 iam_engine_driver=iam_engine_driver,
                 skip_auth_endpoints=skip_auth_endpoints,
             ),
             errors_mw.ErrorsHandlerMiddleware,
-            logging_mw.LoggingMiddleware,
+            MetadataOnlyLoggingMiddleware,
         ],
     )

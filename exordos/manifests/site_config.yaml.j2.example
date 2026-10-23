@@ -8,7 +8,7 @@
 #   * the noreply_address VS variable value (depends on your mail domain)
 #   * the email letter templates (subject + HTML body)
 #
-# Install it once after the notification element is active; reinstalling the
+# Install it once after notification_email is active; reinstalling the
 # notification element will NOT overwrite these.
 
 name: "notification_site_config_example"
@@ -18,8 +18,8 @@ version: "{{ version }}"
 api_version: "v1"
 
 requirements:
-  exordos_notification:
-    from_version: "0.0.0"
+  notification_email:
+    from_version: "1.2.8-dev"
 
 resources:
 
@@ -72,18 +72,18 @@ resources:
 
 imports:
   noreply_address_var:
-    element: "$exordos_notification"
+    element: "$notification_email"
     kind: "resource"
     link: "$core.vs.variables.$noreply_address"
   mail_domain_var:
-    element: "$exordos_notification"
+    element: "$notification_email"
     kind: "resource"
     link: "$core.vs.variables.$mail_domain"
   email_provider:
-    element: "$exordos_notification"
+    element: "$notification_email"
     kind: "resource"
     link: "$exordos_notification.types.email.providers.$smtp_via_mailaas"
   email_confirmation_event_type:
-    element: "$exordos_notification"
+    element: "$notification_email"
     kind: "resource"
     link: "$exordos_notification.types.email.event_types.$email_confirmation"

@@ -17,7 +17,6 @@
 #    under the License.
 
 set -eu
-set -x
 set -o pipefail
 
 GC_PATH="/opt/exordos_notification"
