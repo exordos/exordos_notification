@@ -34,19 +34,19 @@ class ApiEndpointController(ra_controllers.RoutesListController):
     __TARGET_PATH__ = "/v1/"
 
 
-class ProviderController(ra_controllers.BaseResourceController):
+class ProviderController(ra_controllers.BaseResourceControllerPaginated):
     __resource__ = resources.ResourceByRAModel(
         models.Provider, convert_underscore=False
     )
 
 
-class TemplateController(ra_controllers.BaseResourceController):
+class TemplateController(ra_controllers.BaseResourceControllerPaginated):
     __resource__ = resources.ResourceByRAModel(
         models.Template, convert_underscore=False
     )
 
 
-class EventTypeController(ra_controllers.BaseResourceController):
+class EventTypeController(ra_controllers.BaseResourceControllerPaginated):
     __resource__ = resources.ResourceByRAModel(
         models.EventType, convert_underscore=False
     )
