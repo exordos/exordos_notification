@@ -15,6 +15,7 @@
 #    under the License.
 
 import datetime
+import json
 import logging
 import smtplib
 import ssl
@@ -35,6 +36,7 @@ from restalchemy.dm import (
 from restalchemy.storage.sql import orm
 
 from exordos_notification.common import constants as c
+from exordos_notification.common import transports
 
 LOG = logging.getLogger(__name__)
 
@@ -167,6 +169,59 @@ class ZulipProtocol(types_dynamic.AbstractKindModel):
             raise RuntimeError(f"Failed to send message: {result['msg']}")
 
 
+class FirebaseProtocol(types_dynamic.AbstractKindModel):
+    KIND = "firebase"
+
+    ttl_seconds = properties.property(
+        types.Integer(min_value=1, max_value=3600),
+        default=3600,
+    )
+
+    def send(self, content, user_context):
+        data_size = len(
+            json.dumps(
+                content.data,
+                ensure_ascii=False,
+                separators=(",", ":"),
+            ).encode()
+        )
+        if data_size > 4096:
+            raise RuntimeError("firebase_payload_too_large")
+
+        session, project_id = transports.firebase_session()
+        response = session.post(
+            f"https://fcm.googleapis.com/v1/projects/{project_id}/messages:send",
+            json={
+                "message": {
+                    "token": content.registration_token,
+                    "data": content.data,
+                    "android": {
+                        "priority": content.android_priority,
+                        "ttl": f"{self.ttl_seconds}s",
+                    },
+                }
+            },
+            timeout=10,
+        )
+        if response.status_code == 200:
+            return
+
+        try:
+            details = response.json().get("error", {}).get("details", [])
+        except (AttributeError, ValueError):
+            details = []
+        if any(
+            detail.get("@type") == "type.googleapis.com/google.firebase.fcm.v1.FcmError"
+            and detail.get("errorCode") == "UNREGISTERED"
+            for detail in details
+            if isinstance(detail, dict)
+        ):
+            raise RuntimeError("firebase_registration_token_inactive")
+
+        # Provider response bodies can echo input and must not reach logs or status.
+        raise RuntimeError(f"firebase_http_{response.status_code}")
+
+
 class Provider(
     models.ModelWithUUID,
     models.ModelWithRequiredNameDesc,
@@ -183,6 +238,7 @@ class Provider(
             types_dynamic.KindModelType(SimpleSmtpProtocol),
             types_dynamic.KindModelType(StartTlsSmtpProtocol),
             types_dynamic.KindModelType(ZulipProtocol),
+            types_dynamic.KindModelType(FirebaseProtocol),
         ),
         required=True,
     )
@@ -207,6 +263,8 @@ class EventType(
 
 
 class AbstractContent(types_dynamic.AbstractKindModel):
+    requires_user_context = True
+
     def get_id(self):
         return self.__class__.__name__.lower()
 
@@ -316,6 +374,59 @@ ZULIP_MESSAGE_TYPE_MAP = {
 }
 
 
+class RenderedFirebaseContent(AbstractContent):
+    KIND = "rendered_firebase"
+    requires_user_context = False
+
+    registration_token = properties.property(
+        types.String(min_length=1, max_length=4096),
+        required=True,
+    )
+    data = properties.property(
+        types.Dict(),
+        required=True,
+    )
+    android_priority = properties.property(
+        types.Enum(["normal", "high"]),
+        default="normal",
+    )
+
+
+class FirebaseContent(AbstractContent):
+    KIND = "firebase"
+    requires_user_context = False
+
+    registration_token = properties.property(
+        types.String(min_length=1, max_length=4096),
+        default="{{ registration_token }}",
+    )
+    data = properties.property(
+        types.Dict(),
+        required=True,
+    )
+    android_priority = properties.property(
+        types.String(min_length=1, max_length=64),
+        default="{{ priority | default('normal') }}",
+    )
+
+    def render(self, params):
+        if not all(
+            isinstance(key, str) and isinstance(value, str)
+            for key, value in self.data.items()
+        ):
+            raise exceptions.ValidationErrorException()
+        return RenderedFirebaseContent(
+            registration_token=jinja2.Template(self.registration_token).render(
+                **params
+            ),
+            data={
+                key: jinja2.Template(value).render(**params)
+                for key, value in self.data.items()
+            },
+            android_priority=jinja2.Template(self.android_priority).render(**params),
+        )
+
+
 class Template(
     models.ModelWithUUID,
     models.ModelWithRequiredNameDesc,
@@ -332,6 +443,7 @@ class Template(
             types_dynamic.KindModelType(EmailContent),
             types_dynamic.KindModelType(ZulipStreamMessageContent),
             types_dynamic.KindModelType(ZulipDirectMessageContent),
+            types_dynamic.KindModelType(FirebaseContent),
         ),
         required=True,
     )
@@ -515,8 +627,12 @@ class Event(
         return self.exchange.get_context(iam_client)
 
     def render(self, iam_client):
-        context = self.get_context(iam_client)
         templates = self.get_templates()
+        context = (
+            self.get_context(iam_client)
+            if any(template.content.requires_user_context for template in templates)
+            else {}
+        )
 
         rendered_events = []
         for template in templates:
@@ -571,6 +687,7 @@ class RenderedEvent(
             types_dynamic.KindModelType(RenderedEmailContent),
             types_dynamic.KindModelType(RenderedStreamMessageContent),
             types_dynamic.KindModelType(RenderedDirectMessageContent),
+            types_dynamic.KindModelType(RenderedFirebaseContent),
         ),
         required=True,
     )
