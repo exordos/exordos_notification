@@ -55,6 +55,7 @@ class EventBuilderAgent(basic.BasicService):
             event = item.event
             event.status = item.system_status
             event.status_description = item.system_status_description
+            event.errors = item.system_errors
             event.update()
 
     def _cleanup(self):
