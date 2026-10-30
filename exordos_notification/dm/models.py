@@ -15,14 +15,20 @@
 #    under the License.
 
 import datetime
+import hashlib
+import json
 import logging
 import smtplib
 import ssl
+import uuid as sys_uuid
 from email.mime import multipart, text
 
 import jinja2
+import requests
 import zulip
 from gcl_sdk.agents.universal.dm import models as ua_models
+from google.auth import exceptions as google_auth_exceptions
+from psycopg.types import json as sql_json
 from restalchemy.common import exceptions
 from restalchemy.dm import (
     filters,
@@ -35,6 +41,7 @@ from restalchemy.dm import (
 from restalchemy.storage.sql import orm
 
 from exordos_notification.common import constants as c
+from exordos_notification.common import transports
 
 LOG = logging.getLogger(__name__)
 
@@ -167,6 +174,180 @@ class ZulipProtocol(types_dynamic.AbstractKindModel):
             raise RuntimeError(f"Failed to send message: {result['msg']}")
 
 
+class FirebaseProtocol(types_dynamic.AbstractKindModel):
+    KIND = "firebase"
+
+    RETRYABLE_HTTP_STATUSES = frozenset({408, 429, 500, 502, 503, 504})
+
+    ttl_seconds = properties.property(
+        types.Integer(min_value=1, max_value=3600),
+        default=3600,
+    )
+
+    def _data(self, content):
+        if isinstance(content, RenderedFirebaseAndroidContent):
+            return content.data
+        return {
+            "payload": json.dumps(
+                content.payload,
+                ensure_ascii=False,
+                separators=(",", ":"),
+            )
+        }
+
+    def _ttl_seconds(self, content):
+        if not isinstance(content, LegacyRenderedMobilePushContent):
+            return self.ttl_seconds
+        now = datetime.datetime.now(datetime.timezone.utc)
+        ttl = min(self.ttl_seconds, int((content.expires_at - now).total_seconds()))
+        if ttl <= 0:
+            raise self.delivery_error(content, "expired", permanent=True)
+        return ttl
+
+    def validate_content(self, content):
+        data = self._data(content)
+        data_size = len(
+            json.dumps(
+                data,
+                ensure_ascii=False,
+                separators=(",", ":"),
+            ).encode()
+        )
+        if data_size > 4096:
+            raise transports.DeliveryError(
+                "firebase_payload_too_large",
+                [
+                    {
+                        "device_uuid": str(content.device_uuid),
+                        "code": "firebase_payload_too_large",
+                    }
+                ],
+                permanent=True,
+            )
+
+    @staticmethod
+    def delivery_error(content, code, permanent=False):
+        return transports.DeliveryError(
+            code,
+            [{"device_uuid": str(content.device_uuid), "code": code}],
+            permanent=permanent,
+        )
+
+    def get_session(self, content):
+        try:
+            return transports.firebase_session()
+        except (
+            OSError,
+            ValueError,
+            RuntimeError,
+            google_auth_exceptions.GoogleAuthError,
+        ):
+            raise self.delivery_error(
+                content,
+                "firebase_credentials_error",
+                permanent=True,
+            ) from None
+
+    def send(self, content, user_context, firebase=None):
+        self.validate_content(content)
+
+        session, project_id = firebase or self.get_session(content)
+        data = self._data(content)
+        ttl_seconds = self._ttl_seconds(content)
+        try:
+            response = session.post(
+                f"https://fcm.googleapis.com/v1/projects/{project_id}/messages:send",
+                json={
+                    "message": {
+                        "token": content.registration_token,
+                        "data": data,
+                        "android": {
+                            "priority": content.priority,
+                            "ttl": f"{ttl_seconds}s",
+                        },
+                    }
+                },
+                timeout=10,
+            )
+        except google_auth_exceptions.RefreshError as error:
+            raise self.delivery_error(
+                content,
+                "firebase_auth_error",
+                permanent=not error.retryable,
+            ) from None
+        except (requests.RequestException, google_auth_exceptions.TransportError):
+            raise self.delivery_error(content, "firebase_transport_error") from None
+        except google_auth_exceptions.GoogleAuthError:
+            raise self.delivery_error(
+                content,
+                "firebase_auth_error",
+                permanent=True,
+            ) from None
+        if response.status_code == 200:
+            return
+
+        try:
+            details = response.json().get("error", {}).get("details", [])
+        except (AttributeError, ValueError):
+            details = []
+        if any(
+            detail.get("@type") == "type.googleapis.com/google.firebase.fcm.v1.FcmError"
+            and detail.get("errorCode") == "UNREGISTERED"
+            for detail in details
+            if isinstance(detail, dict)
+        ):
+            raise transports.DeliveryError(
+                "registration_token_inactive",
+                [
+                    {
+                        "device_uuid": str(content.device_uuid),
+                        "code": "registration_token_inactive",
+                    }
+                ],
+                permanent=True,
+            )
+
+        # Provider response bodies can echo input and must not reach logs or status.
+        code = f"firebase_http_{response.status_code}"
+        raise transports.DeliveryError(
+            code,
+            [{"device_uuid": str(content.device_uuid), "code": code}],
+            permanent=response.status_code not in self.RETRYABLE_HTTP_STATUSES,
+            retry_after=transports.retry_after_seconds(response),
+        )
+
+
+class FirebaseProtocolType(types_dynamic.KindModelSelectorType):
+    """Read the obsolete provider shape without honoring its credential path."""
+
+    def from_simple_type(self, value):
+        if isinstance(value, dict) and value.get("kind") == FirebaseProtocol.KIND:
+            value = value.copy()
+            value.pop("credentials_file", None)
+            value.pop("firebase_project_id", None)
+        return super().from_simple_type(value)
+
+
+class InactiveToken(
+    models.ModelWithUUID, models.ModelWithTimestamp, orm.SQLStorableMixin
+):
+    __tablename__ = "inactive_tokens"
+
+    scope = properties.property(types.String(max_length=4096), required=True)
+    token_fingerprint = properties.property(
+        types.String(min_length=64, max_length=64), required=True
+    )
+
+    @classmethod
+    def identify(cls, scope, token):
+        fingerprint = hashlib.sha256(token.encode()).hexdigest()
+        return cls(
+            uuid=sys_uuid.uuid5(sys_uuid.NAMESPACE_URL, f"{scope}:{fingerprint}"),
+            scope=scope,
+            token_fingerprint=fingerprint,
+        )
+
+
 class Provider(
     models.ModelWithUUID,
     models.ModelWithRequiredNameDesc,
@@ -179,19 +360,54 @@ class Provider(
     __tablename__ = "providers"
 
     protocol = properties.property(
-        types_dynamic.KindModelSelectorType(
+        FirebaseProtocolType(
             types_dynamic.KindModelType(SimpleSmtpProtocol),
             types_dynamic.KindModelType(StartTlsSmtpProtocol),
             types_dynamic.KindModelType(ZulipProtocol),
+            types_dynamic.KindModelType(FirebaseProtocol),
         ),
         required=True,
     )
 
     def send(self, content, user_context):
-        return self.protocol.send(
-            content=content,
-            user_context=user_context,
-        )
+        if not isinstance(self.protocol, FirebaseProtocol):
+            return self.protocol.send(
+                content=content,
+                user_context=user_context,
+            )
+
+        self.protocol.validate_content(content)
+        firebase = self.protocol.get_session(content)
+        _, project_id = firebase
+        scope = f"firebase:{project_id}"
+        inactive = InactiveToken.identify(scope, content.registration_token)
+        if InactiveToken.objects.get_one_or_none(
+            filters={"uuid": filters.EQ(inactive.uuid)}
+        ):
+            raise transports.DeliveryError(
+                "registration_token_inactive",
+                [
+                    {
+                        "device_uuid": str(content.device_uuid),
+                        "code": "registration_token_inactive",
+                        "permanent": True,
+                    }
+                ],
+                permanent=True,
+            )
+        try:
+            return self.protocol.send(
+                content=content,
+                user_context=user_context,
+                firebase=firebase,
+            )
+        except transports.DeliveryError as error:
+            if any(
+                item.get("code") == "registration_token_inactive"
+                for item in error.errors
+            ):
+                inactive.insert()
+            raise
 
 
 class EventType(
@@ -207,6 +423,8 @@ class EventType(
 
 
 class AbstractContent(types_dynamic.AbstractKindModel):
+    requires_user_context = True
+
     def get_id(self):
         return self.__class__.__name__.lower()
 
@@ -316,6 +534,134 @@ ZULIP_MESSAGE_TYPE_MAP = {
 }
 
 
+class RenderedFirebaseAndroidContent(AbstractContent):
+    KIND = "rendered_firebase_android"
+    requires_user_context = False
+
+    device_uuid = properties.property(
+        types.UUID(),
+        required=True,
+    )
+    registration_token = properties.property(
+        types.String(min_length=1, max_length=4096),
+        required=True,
+    )
+    data = properties.property(
+        types.Dict(),
+        required=True,
+    )
+    priority = properties.property(
+        types.Enum(["normal", "high"]),
+        default="normal",
+    )
+
+
+class FirebaseAndroidContent(AbstractContent):
+    KIND = "firebase_android"
+    requires_user_context = False
+
+    device_uuid = properties.property(
+        types.String(min_length=1, max_length=64),
+        default="{{ device_uuid }}",
+    )
+    registration_token = properties.property(
+        types.String(min_length=1, max_length=4096),
+        default="{{ registration_token }}",
+    )
+    data = properties.property(
+        types.Dict(),
+        required=True,
+    )
+    priority = properties.property(
+        types.String(min_length=1, max_length=64),
+        default="{{ priority | default('normal') }}",
+    )
+
+    def render(self, params):
+        if not all(
+            isinstance(key, str) and isinstance(value, str)
+            for key, value in self.data.items()
+        ):
+            raise exceptions.ValidationErrorException()
+        return RenderedFirebaseAndroidContent(
+            device_uuid=sys_uuid.UUID(
+                jinja2.Template(self.device_uuid).render(**params)
+            ),
+            registration_token=jinja2.Template(self.registration_token).render(
+                **params
+            ),
+            data={
+                key: jinja2.Template(value).render(**params)
+                for key, value in self.data.items()
+            },
+            priority=jinja2.Template(self.priority).render(**params),
+        )
+
+
+class LegacyRenderedMobilePushContent(AbstractContent):
+    """Stored content from the removed relay topology."""
+
+    KIND = "rendered_mobile_push"
+    requires_user_context = False
+
+    device_uuid = properties.property(types.UUID(), required=True)
+    registration_token = properties.property(
+        types.String(min_length=1, max_length=4096), required=True
+    )
+    payload = properties.property(types.Dict(), required=True)
+    expires_at = properties.property(types.UTCDateTimeZ(), required=True)
+    priority = properties.property(types.Enum(["normal", "high"]), default="normal")
+
+
+class LegacyMobilePushContent(AbstractContent):
+    """Allow the agent to retire templates created by the old push element."""
+
+    KIND = "mobile_push"
+    requires_user_context = False
+
+    def render(self, params):
+        event = params["_notification_event"]
+        route = {
+            "uuid": event["uuid"],
+            "user_uuid": event["exchange"]["user_uuid"],
+            "message_uuid": event["event_params"].get("message_uuid"),
+            **{
+                field: event["event_params"][field]
+                for field in (
+                    "kind",
+                    "organization_uuid",
+                    "project_uuid",
+                    "stream_uuid",
+                    "topic_uuid",
+                )
+            },
+        }
+        result = []
+        for device in event["event_params"]["devices"]:
+            if device["content"]["kind"] != "encrypted":
+                raise exceptions.ValidationErrorException()
+            result.append(
+                LegacyRenderedMobilePushContent(
+                    device_uuid=sys_uuid.UUID(device["device_uuid"]),
+                    registration_token=device["registration_token"],
+                    payload={
+                        **route,
+                        "device_uuid": device["device_uuid"],
+                        "content": device["content"],
+                    },
+                    expires_at=params["_notification_expires_at"],
+                    priority=event["event_params"].get(
+                        "priority",
+                        "high"
+                        if event["event_params"]["kind"]
+                        == "notification_message_create"
+                        else "normal",
+                    ),
+                )
+            )
+        return result
+
+
 class Template(
     models.ModelWithUUID,
     models.ModelWithRequiredNameDesc,
@@ -332,6 +678,8 @@ class Template(
             types_dynamic.KindModelType(EmailContent),
             types_dynamic.KindModelType(ZulipStreamMessageContent),
             types_dynamic.KindModelType(ZulipDirectMessageContent),
+            types_dynamic.KindModelType(FirebaseAndroidContent),
+            types_dynamic.KindModelType(LegacyMobilePushContent),
         ),
         required=True,
     )
@@ -442,6 +790,7 @@ class Binding(
 
 class StatusMixin(models.Model):
     next_retry_delta = 60  # 60 sec
+    initial_transport_retry_delta = 5  # 5 sec
     last_retry_delta = 1 * 24 * 60 * 60  # 1 day
 
     STATUS = c.EventStatus
@@ -454,6 +803,7 @@ class StatusMixin(models.Model):
         types.String(max_length=255),
         default="",
     )
+    errors = properties.property(types.TypedList(types.Dict()), default=list)
     next_retry_at = properties.property(
         types.UTCDateTimeZ(),
         default=next_time(seconds=0),  # now + 0sec
@@ -467,20 +817,29 @@ class StatusMixin(models.Model):
         default=0,
     )
 
-    def reset_next_retry(self):
-        now = datetime.datetime.now(datetime.timezone.utc)
-        self.next_retry_at = now + datetime.timedelta(seconds=self.next_retry_delta)
+    def _get_prepared_data(self, properties=None):
+        data = super()._get_prepared_data(properties)
+        if "errors" in data:
+            # A Python list otherwise binds as a PostgreSQL array, not JSONB.
+            data["errors"] = sql_json.Jsonb(data["errors"])
+        return data
 
-    def set_error_status(self, error_message):
+    def reset_next_retry(self, seconds=None):
+        now = datetime.datetime.now(datetime.timezone.utc)
+        delay = self.next_retry_delta if seconds is None else seconds
+        self.next_retry_at = now + datetime.timedelta(seconds=delay)
+
+    def set_error_status(self, error_message, retry_after=None):
         self.status_description = str(error_message)
         self.retry_count += 1
         self.status = self.STATUS.ERROR.value
-        self.reset_next_retry()
+        self.reset_next_retry(retry_after)
         self.save()
 
     def set_done_status(self):
         self.status_description = "ok"
         self.status = self.STATUS.ACTIVE.value
+        self.errors = []
 
 
 class Event(
@@ -511,12 +870,15 @@ class Event(
         required=True,
     )
 
-    def get_context(self, iam_client):
-        return self.exchange.get_context(iam_client)
+    def get_context(self, iam_client, templates=None):
+        templates = self.get_templates() if templates is None else templates
+        if any(template.content.requires_user_context for template in templates):
+            return self.exchange.get_context(iam_client)
+        return {}
 
     def render(self, iam_client):
-        context = self.get_context(iam_client)
         templates = self.get_templates()
+        context = self.get_context(iam_client, templates)
 
         rendered_events = []
         for template in templates:
@@ -571,6 +933,8 @@ class RenderedEvent(
             types_dynamic.KindModelType(RenderedEmailContent),
             types_dynamic.KindModelType(RenderedStreamMessageContent),
             types_dynamic.KindModelType(RenderedDirectMessageContent),
+            types_dynamic.KindModelType(RenderedFirebaseAndroidContent),
+            types_dynamic.KindModelType(LegacyRenderedMobilePushContent),
         ),
         required=True,
     )
@@ -594,6 +958,24 @@ class RenderedEvent(
                 content=self.content,
                 user_context=self.user_context,
             )
+        except transports.DeliveryError as error:
+            self.errors = error.errors or [{"code": error.code}]
+            self.errors = [
+                dict(item, permanent=item.get("permanent", error.permanent))
+                for item in self.errors
+            ]
+            retry_after = error.retry_after
+            if retry_after is None and not error.permanent:
+                retry_after = min(
+                    self.initial_transport_retry_delta
+                    * (2 ** min(self.retry_count, 4)),
+                    self.next_retry_delta,
+                )
+            self.set_error_status(error.code, retry_after=retry_after)
+            if error.permanent:
+                self.next_retry_at = self.last_retry_at + datetime.timedelta(days=365)
+                self.update()
+            return
         except Exception as e:
             LOG.exception("Failed to send event")
             self.set_error_status(e)
@@ -661,3 +1043,5 @@ class IncorrectStatuses(
         types.String(),
         default="",
     )
+    system_errors = properties.property(types.TypedList(types.Dict()), default=list)
+    user_errors = properties.property(types.TypedList(types.Dict()), default=list)
