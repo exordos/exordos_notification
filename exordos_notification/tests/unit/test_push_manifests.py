@@ -49,6 +49,7 @@ def test_source_account_email_passes_the_core_iam_field_validator():
     "filename",
     [
         "notification_firebase.yaml.j2",
+        "notification_relay.yaml.j2",
         "push_source.yaml.j2",
     ],
 )
@@ -71,6 +72,7 @@ def test_dependencies_use_core_versions_instead_of_pep440(filename):
     "role,filename",
     [
         ("firebase", "notification_firebase.yaml.j2"),
+        ("notification", "notification_relay.yaml.j2"),
     ],
 )
 def test_role_manifest_renders_real_protocol_and_template_models(role, filename):
@@ -89,7 +91,9 @@ def test_role_manifest_renders_real_protocol_and_template_models(role, filename)
     protocol = resources["$exordos_notification.types.email.providers"]["mobile_push"][
         "protocol"
     ]
-    provider_class = models.FirebaseProtocol
+    provider_class = (
+        models.FirebaseProtocol if role == "firebase" else models.NotificationProtocol
+    )
     assert provider_class(**protocol).kind == role
     event_types = resources["$exordos_notification.types.email.event_types"]
     assert {
@@ -108,7 +112,7 @@ def test_role_manifest_renders_real_protocol_and_template_models(role, filename)
         assert "mobile-push-auth.json" not in yaml.safe_dump(manifest)
 
 
-@pytest.mark.parametrize("transport", ["notification_firebase"])
+@pytest.mark.parametrize("transport", ["notification_relay", "notification_firebase"])
 def test_transport_generates_and_exports_identity_without_manual_uuid(transport):
     environment = jinja2.Environment(
         loader=jinja2.FileSystemLoader(ROOT), undefined=jinja2.StrictUndefined
@@ -147,6 +151,7 @@ def test_transport_generates_and_exports_identity_without_manual_uuid(transport)
 def test_cli_can_discover_raw_site_templates_before_jinja_rendering():
     # The CLI selects elements by parsing raw YAML before building a template.
     for name in (
+        "notification_relay",
         "notification_firebase",
         "push_source",
     ):
