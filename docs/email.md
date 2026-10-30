@@ -1,5 +1,7 @@
 # Authenticated email events
 
+[Русская версия](email.ru.md)
+
 Every Event POST and GET now requires a valid IAM token, including Core email
 confirmation events. The standard IAM middleware protects the v1 API; there is
 no email bypass for nested EventType lookups. Email senders need
@@ -14,12 +16,13 @@ install application-specific event types or letter templates.
 
 Install `core_notification_email` from the Core repository to enable Core email
 events. Its requirements pull in `notification_email`; that element in turn
-requires the base Notification service and mailaas. Core owns its event type,
-confirmation template, service identity and sender configuration.
+requires the base Notification service and mailaas. Core owns its registration
+and password-reset event types, letter templates, service identity and sender
+configuration.
 
 The Core element follows the existing `metapaas_audit` and `ecosystem_audit`
 manifests: it provisions a `type: service` IAM user with only
-confirmation-type create/read and catalog-read permissions, plus a
+registration/reset-type create/read and catalog-read permissions, plus a
 `$core.iam.tokens` resource with `auto_renew: true`. It renders `:access_token`
 into a separate mode-`0600` Core events token drop-in as `exordos_api_token`.
 

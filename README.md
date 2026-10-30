@@ -28,7 +28,8 @@ exordos em elements install notification_email
 This adds the SMTP relay/account, provider and sender variables. Application
 event types, letter templates and sender configuration belong to the producing
 application. All Event submissions and status reads require authorization. See the
-[email authentication and rollout guide](docs/email.md).
+[email authentication and rollout guide](docs/email.md)
+([на русском](docs/email.ru.md)).
 
 ### 3. Configure email site settings
 
