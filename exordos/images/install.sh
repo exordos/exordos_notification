@@ -41,7 +41,7 @@ curl -LsSf https://releases.astral.sh/github/uv/releases/download/0.10.12/uv-ins
 source "$HOME"/.local/bin/env
 
 # Install exordos notification
-sudo mkdir -p $GC_CFG_DIR
+sudo mkdir -p $GC_CFG_DIR/exordos_notification.conf.d
 sudo mkdir -p /var/lib/exordos/exordos_notification/core_agent
 sudo cp "$GC_PATH/etc/exordos_notification/exordos_notification.conf.j2" $GC_CFG_DIR/
 sudo cp "$GC_PATH/etc/exordos_notification/core_agent.conf.j2" $GC_CFG_DIR/

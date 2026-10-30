@@ -23,6 +23,7 @@ from email.mime import multipart, text
 import jinja2
 import zulip
 from gcl_sdk.agents.universal.dm import models as ua_models
+from restalchemy.common import exceptions
 from restalchemy.dm import (
     filters,
     models,
@@ -356,15 +357,35 @@ class Template(
 class UserExchange(types_dynamic.AbstractKindModel):
     KIND = "User"
 
-    user_id = properties.property(
+    user_uuid = properties.property(
         types.UUID(),
         required=True,
     )
 
     def get_context(self, iam_client):
         return {
-            "user": iam_client.get_user(self.user_id),
+            "user": iam_client.get_user(self.user_uuid),
         }
+
+
+class UserExchangeType(types_dynamic.KindModelType):
+    def __init__(self):
+        super().__init__(UserExchange)
+
+    def from_simple_type(self, value):
+        value = value.copy()
+        if "user_id" in value:
+            legacy_user = value.pop("user_id")
+            if "user_uuid" in value and value["user_uuid"] != legacy_user:
+                raise exceptions.ParseError(value="Conflicting user identifiers")
+            value["user_uuid"] = legacy_user
+        return super().from_simple_type(value)
+
+    def to_simple_type(self, value):
+        result = super().to_simple_type(value)
+        # Keep the original v1 response key for clients reading existing User events.
+        result["user_id"] = result["user_uuid"]
+        return result
 
 
 class DummyExchange(types_dynamic.AbstractKindModel):
@@ -394,6 +415,8 @@ class Binding(
     models.ModelWithTimestamp,
     orm.SQLStorableMixin,
 ):
+    __tablename__ = "bindings"
+
     user = properties.property(
         types.UUID(),
         required=True,
@@ -406,6 +429,15 @@ class Binding(
         EventType,
         required=True,
     )
+
+    def validate(self):
+        super().validate()
+        if (
+            self.template.project_id != self.project_id
+            and not self.template.is_default
+            or self.template.event_type.uuid != self.event_type.uuid
+        ):
+            raise exceptions.ValidationErrorException()
 
 
 class StatusMixin(models.Model):
@@ -463,7 +495,7 @@ class Event(
 
     exchange = properties.property(
         types_dynamic.KindModelSelectorType(
-            types_dynamic.KindModelType(UserExchange),
+            UserExchangeType(),
             types_dynamic.KindModelType(ProjectExchange),
             types_dynamic.KindModelType(SystemExchange),
             types_dynamic.KindModelType(DummyExchange),
@@ -484,12 +516,7 @@ class Event(
 
     def render(self, iam_client):
         context = self.get_context(iam_client)
-        templates = Template.objects.get_all(
-            filters={
-                "event_type": filters.EQ(self.event_type),
-                "is_default": filters.EQ(True),
-            }
-        )
+        templates = self.get_templates()
 
         rendered_events = []
         for template in templates:
@@ -507,6 +534,28 @@ class Event(
             )
 
         return rendered_events
+
+    def get_templates(self):
+        if isinstance(self.exchange, UserExchange):
+            bindings = Binding.objects.get_all(
+                filters={
+                    "project_id": filters.EQ(self.project_id),
+                    "event_type": filters.EQ(self.event_type),
+                    "user": filters.EQ(self.exchange.user_uuid),
+                }
+            )
+            if bindings:
+                return list(
+                    {
+                        binding.template.uuid: binding.template for binding in bindings
+                    }.values()
+                )
+        return Template.objects.get_all(
+            filters={
+                "event_type": filters.EQ(self.event_type),
+                "is_default": filters.EQ(True),
+            }
+        )
 
 
 class RenderedEvent(

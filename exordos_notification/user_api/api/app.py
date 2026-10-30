@@ -28,11 +28,6 @@ from exordos_notification.user_api.api import versions
 skip_auth_endpoints = [
     iam_mw.EndpointComparator("/"),
     iam_mw.EndpointComparator("/v1/"),
-    iam_mw.EndpointComparator(
-        "/v1/events/[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12}",
-        methods=["GET"],
-    ),
-    iam_mw.EndpointComparator("/v1/events/", methods=["POST"]),
 ]
 
 
@@ -64,6 +59,12 @@ def get_openapi_engine():
     return openapi_engine
 
 
+class MetadataOnlyLoggingMiddleware(logging_mw.LoggingMiddleware):
+    def _truncate_body(self, body, max_size=None):
+        # Event bodies and provider settings contain private data.
+        return "[REDACTED]" if body is not None else None
+
+
 def build_wsgi_application(iam_engine_driver):
     return middlewares.attach_middlewares(
         applications.OpenApiApplication(
@@ -77,6 +78,6 @@ def build_wsgi_application(iam_engine_driver):
                 skip_auth_endpoints=skip_auth_endpoints,
             ),
             errors_mw.ErrorsHandlerMiddleware,
-            logging_mw.LoggingMiddleware,
+            MetadataOnlyLoggingMiddleware,
         ],
     )

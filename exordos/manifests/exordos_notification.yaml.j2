@@ -25,8 +25,6 @@ requirements:
     from_version: "0.0.0"
   dbaas:
     from_version: "2.2.4"
-  mailaas:
-    from_version: "0.0.0"
 
 resources:
 
@@ -146,34 +144,6 @@ resources:
         kind: plain
       method: AUTO_HEX
 
-    notification_smtp_password:
-      name: notification_smtp_password
-      description: "SMTP account password for the notification mail relay"
-      project_id: "12345678-c625-4fee-81d5-f691897b8142"
-      constructor:
-        kind: plain
-      method: AUTO_HEX
-
-  # Mail (mailaas) — dedicated SMTP relay instance for notification
-  $mailaas.types.mail.instances:
-    notification_mail:
-      name: "notification-mail"
-      project_id: "12345678-c625-4fee-81d5-f691897b8142"
-      domain: f"{$core.vs.variables.$mail_domain:value}"
-      cpu: 1
-      ram: 1024
-      disk_size: 10
-      version: $exordos_notification.imports.$exim4_1:uuid
-
-  # SMTP account used by the notification service to send mail.
-  # `password` is the plaintext secret; mailaas stores it verbatim (so this
-  # target reconciles idempotently) and derives the exim4 crypt hash for the DP.
-  $mailaas.types.mail.instances.$notification_mail.accounts:
-    smtp_account:
-      project_id: "12345678-c625-4fee-81d5-f691897b8142"
-      username: "smtp"
-      password: $core.secret.passwords.$notification_smtp_password:value
-      instance: $mailaas.types.mail.instances.$notification_mail:uuid
 
   # Compute
   $core.compute.nodes:
@@ -212,79 +182,27 @@ resources:
           IAM_CLIENT_UUID={$exordos_notification.imports.$var_iam_default_client_uuid:value}
           "
 
-    # Wire core's IAM user-api to push events to this notification service.
-    # Instead of coupling core to a VS variable, we deliver the stock gcl_sdk
-    # HTTP event client configuration directly onto the core node(s) as config
-    # drop-ins:
-    #   * event_type_mapping.yaml  — maps core event KINDs to our event_type UUIDs
-    #   * exordos_core.d/90-notification-events.conf — enables the [events]
-    #     section (client_type=http + our endpoint), loaded via the
-    #     `--config-dir /etc/exordos_core/exordos_core.d` of ec-user-api.
-    # ec-user-api is restarted on change so the new client takes effect.
-    # The notification /v1/events endpoint skips auth, so the API token below is
-    # a placeholder and no IAM token has to be provisioned into core.
-    core_event_type_mapping:
+    # An existing init file/config can predate IAM_CLIENT_UUID. Deliver IAM
+    # settings directly as a managed override, including after an image update.
+    notification_iam_config:
       project_id: "12345678-c625-4fee-81d5-f691897b8142"
-      path: /etc/exordos_core/event_type_mapping.yaml
+      path: /etc/exordos_notification/exordos_notification.conf.d/95-iam.conf
+      mode: "0600"
       target:
-        kind: node_set
-        # core_set (fixed UUID in core.yaml.j2)
-        node_set: "70c88222-b4d9-46c3-9340-aa5bfaaa4b94"
+        kind: node
+        node: $core.compute.nodes.$notification_cp:uuid
       on_change:
         kind: shell
-        # Restart only once BOTH drop-ins are in place. The mapping and the
-        # [events] conf are two independent config renders applied in arbitrary
-        # order; guarding both on_change hooks on the presence of both files
-        # ensures ec-user-api is restarted exactly once (when the second file
-        # arrives) and never starts with [events] enabled but no mapping
-        # (which would crash build_client).
-        command: >-
-          test -f /etc/exordos_core/event_type_mapping.yaml &&
-          test -f /etc/exordos_core/exordos_core.d/90-notification-events.conf &&
-          systemctl restart ec-user-api && systemctl restart ec-gservice || true
+        command: systemctl restart exordos-notification-user-api exordos-notification-builder-agent exordos-notification-mail-agent
       body:
         kind: text
         content: |
-          EventTypeMapping:
-              # exordos_core RegistrationEventPayload.KIND ->
-              # notification email_confirmation event_type UUID
-              IamUserRegistration: e0fe8070-e59c-4347-8df1-b3f638c06565
-    core_events_conf:
-      project_id: "12345678-c625-4fee-81d5-f691897b8142"
-      path: /etc/exordos_core/exordos_core.d/90-notification-events.conf
-      target:
-        kind: node_set
-        node_set: "70c88222-b4d9-46c3-9340-aa5bfaaa4b94"
-      on_change:
-        kind: shell
-        command: >-
-          test -f /etc/exordos_core/event_type_mapping.yaml &&
-          test -f /etc/exordos_core/exordos_core.d/90-notification-events.conf &&
-          systemctl restart ec-user-api && systemctl restart ec-gservice || true
-      body:
-        kind: text
-        content: |
-          [events]
-          enabled = true
-          exordos_notification_endpoint = http://notification-cp.local.genesis-core.tech:8080
+          f"
+          [iam]
+          iam_endpoint = http://core.{$exordos_notification.imports.$core_local_domain:name}/api/core/v1/iam/clients/{$exordos_notification.imports.$var_iam_default_client_uuid:value}
+          audience = {$exordos_notification.imports.$var_iam_default_client_id:value}
+          "
 
-  $core.vs.variables:
-    mail_domain:
-      name: "notification_mail_domain"
-      project_id: "12345678-c625-4fee-81d5-f691897b8142"
-      setter:
-        kind: selector
-        selector_strategy: latest
-    noreply_address:
-      name: "notification_noreply_address"
-      project_id: "12345678-c625-4fee-81d5-f691897b8142"
-      setter:
-        kind: selector
-        selector_strategy: latest
-
-  # NOTE: mail_domain and noreply_address VS variables have no default values —
-  # they are installation-specific. Set them via the separate per-installation
-  # manifest (see site_config.yaml.j2). Until set, smtp_via_mailaas will stay NEW.
 
   # DNS
   $exordos_notification.imports.$core_local_domain.records:
@@ -297,36 +215,8 @@ resources:
         name: "notification-cp"
         address: "$core.compute.nodes.$notification_cp:default_network:ipv4"
 
-  # Notification EM resources — synced by EMSyncAgent into notification DB
-  $exordos_notification.types.email.providers:
-    smtp_via_mailaas:
-      project_id: "12345678-c625-4fee-81d5-f691897b8142"
-      name: "smtp_via_mailaas"
-      description: "SMTP via mailaas exim4 relay"
-      status: "ACTIVE"
-      protocol:
-        kind: StartTlsSMTP
-        host: f"{$mailaas.types.mail.instances.$notification_mail:join(ipsv4)}"
-        port: 587
-        noreply_email_address: f"{$core.vs.variables.$noreply_address:value}"
-        user: f"smtp@{$core.vs.variables.$mail_domain:value}"
-        password: $core.secret.passwords.$notification_smtp_password:value
-        skip_tls_verify: true
 
-  $exordos_notification.types.email.event_types:
-    email_confirmation:
-      uuid: "e0fe8070-e59c-4347-8df1-b3f638c06565"
-      project_id: "12345678-c625-4fee-81d5-f691897b8142"
-      name: "email_confirmation"
-      description: "User email address confirmation"
-      status: "ACTIVE"
-
-  # NOTE: the email templates themselves (letter subject/body) are
-  # installation-configurable content and live in the separate
-  # site_config.yaml.j2 manifest, which imports the provider and event_type
-  # exported below.
-
-  # Browser management API. Internal unauthenticated event ingestion stays private.
+  # Authenticated management and event API.
 
   $exordos_notification.imports.$core_lb.backend_pools:
     core_lb_notification_backend_http:
@@ -370,14 +260,13 @@ exports:
     link: "$dbaas.types.postgres.instances.$notification_cluster_pg"
   notification_cp:
     link: "$core.dns.domains.$local_domain.records.$notification_cp"
-  mail_domain:
-    link: "$core.vs.variables.$mail_domain"
-  noreply_address:
-    link: "$core.vs.variables.$noreply_address"
-  email_provider:
-    link: "$exordos_notification.types.email.providers.$smtp_via_mailaas"
-  email_confirmation_event_type:
-    link: "$exordos_notification.types.email.event_types.$email_confirmation"
+
+  backend_node:
+    link: "$core.compute.nodes.$notification_cp"
+    kind: "resource"
+  event_type_read_permission:
+    link: "$core.iam.permissions.$event_type_read"
+    kind: "resource"
 
 imports:
   core_lb:
@@ -408,7 +297,3 @@ imports:
     element: "$core"
     kind: "resource"
     link: "$core.vs.variables.$iam_default_client_id"
-  exim4_1:
-    element: "$mailaas"
-    kind: "resource"
-    link: "$mailaas.types.mail.versions.$exim4_1"
