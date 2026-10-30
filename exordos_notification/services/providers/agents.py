@@ -44,7 +44,7 @@ class SMTPAgent(basic.BasicService):
             },
             limit=self._butch_size,
         ):
-            LOG.info("Processing event: %s", event)
+            LOG.info("Processing rendered event: %s", event.uuid)
             event.send()
 
     def _iteration(self):

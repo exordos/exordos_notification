@@ -113,3 +113,10 @@ The notification service continues using its original database; switching it to
 the restored instance is a separate step. The restored instance has no backup
 policy of its own. `restore_from` is applied only when creating the instance;
 to repeat the restore, delete the restore element and install it again.
+
+## Encrypted mobile notifications
+
+The optional Firebase transport uses ordinary Event, Template and Provider
+resources to deliver encrypted Android data payloads. Install
+`notification_firebase.yaml.j2` only on the central sender with private Firebase
+credentials. See the [mobile contract and Firebase guide](docs/mobile-push.md).

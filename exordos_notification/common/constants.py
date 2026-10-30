@@ -15,8 +15,20 @@
 #    under the License.
 
 import enum
+import uuid
 
 GLOBAL_SERVICE_NAME = "exordos_notification"
+NOTIFICATION_MESSAGE_CREATE = "notification_message_create"
+NOTIFICATION_MESSAGE_CANCEL = "notification_message_cancel"
+NOTIFICATION_TOPIC_UPDATE = "notification_topic_update"
+PUSH_EVENT_TYPES = {
+    kind: uuid.uuid5(uuid.NAMESPACE_URL, f"urn:exordos:notification:{kind}")
+    for kind in (
+        NOTIFICATION_MESSAGE_CREATE,
+        NOTIFICATION_MESSAGE_CANCEL,
+        NOTIFICATION_TOPIC_UPDATE,
+    )
+}
 
 
 class AlwaysActiveStatus(str, enum.Enum):

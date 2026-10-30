@@ -14,6 +14,7 @@
 #    License for the specific language governing permissions and limitations
 #    under the License.
 
+import datetime
 import uuid as sys_uuid
 
 from gcl_iam import exceptions as iam_exceptions
@@ -22,6 +23,7 @@ from restalchemy.api import controllers as ra_controllers
 from restalchemy.api import resources
 from restalchemy.dm import filters as dm_filters
 
+from exordos_notification.common import push
 from exordos_notification.dm import models
 from exordos_notification.user_api.api import versions
 
@@ -102,16 +104,58 @@ class BindingController(ra_controllers.BaseResourceController):
         }
 
 
+class EventParamsField(resources.ResourceRAProperty):
+    def get_dump_callable(self):
+        return self.dump_value
+
+    def dump_value(self, value):
+        if push.is_push_event(None, value):
+            return {key: item for key, item in value.items() if key != "devices"}
+        return super().dump_value(value)
+
+
+class EventResource(resources.ResourceByRAModel):
+    def get_fields(self, override_is_public_field_func=None):
+        for name, field in super().get_fields(override_is_public_field_func):
+            if name == "event_params":
+                field = EventParamsField(
+                    self, self.get_property_type(name), name, public=field.is_public()
+                )
+            yield name, field
+
+
 class EventController(ra_controllers.BaseResourceController):
-    __resource__ = resources.ResourceByRAModel(models.Event, convert_underscore=False)
+    __resource__ = EventResource(models.Event, convert_underscore=False)
 
     def _authorize(self, event, action):
+        if push.is_push_event(event.event_type, event.event_params):
+            target = "source_" + event.event_params["organization_uuid"]
+        else:
+            target = "event_type_" + str(event.event_type.uuid)
         self.get_context().iam_context.enforcer.enforce_raw(
-            f"exordos_notification.event_type_{event.event_type.uuid}.{action}",
+            f"exordos_notification.{target}.{action}",
             do_raise=True,
         )
 
     def create(self, **kwargs):
+        mobile = push.is_push_event(kwargs["event_type"], kwargs["event_params"])
+        if mobile:
+            for field in (
+                "created_at",
+                "updated_at",
+                "status",
+                "status_description",
+                "errors",
+                "next_retry_at",
+                "retry_count",
+            ):
+                kwargs.pop(field, None)
+            deadline = datetime.datetime.now(
+                datetime.timezone.utc
+            ) + datetime.timedelta(hours=1)
+            kwargs["last_retry_at"] = min(
+                kwargs.get("last_retry_at", deadline), deadline
+            )
         event = self.model(**kwargs)
         self._authorize(event, "create")
         event.insert()
@@ -124,15 +168,26 @@ class EventController(ra_controllers.BaseResourceController):
 
     def filter(self, filters, order_by=None):
         self.get_context().iam_context.enforcer.enforce_raw(
-            "exordos_notification.event.read", do_raise=True
+            "exordos_notification.event.read",
+            do_raise=True,
         )
         return super().filter(filters, order_by=order_by)
 
     def update(self, uuid, **kwargs):
-        self._authorize(self.get(uuid), "update")
+        event = self.get(uuid)
+        if push.is_push_event(
+            event.event_type, event.event_params
+        ) or push.is_push_event(
+            kwargs.get("event_type", event.event_type),
+            kwargs.get("event_params", event.event_params),
+        ):
+            raise iam_exceptions.Forbidden()
+        self._authorize(event, "update")
         return super().update(uuid, **kwargs)
 
     def delete(self, uuid):
         event = self.get(uuid)
+        if push.is_push_event(event.event_type, event.event_params):
+            raise iam_exceptions.Forbidden()
         self._authorize(event, "delete")
         return event.delete()

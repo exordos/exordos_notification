@@ -22,6 +22,8 @@ from cryptography.x509.oid import NameOID
 from gcl_iam import algorithms
 from restalchemy.storage.sql import engines, migrations
 
+from exordos_notification.common import constants
+from exordos_notification.dm import models
 from exordos_notification.user_api.api import app
 
 
@@ -135,6 +137,8 @@ def http_server(database, tmp_path_factory):
     tls.load_cert_chain(cert_file, key_file)
     original_ca = os.environ.get("REQUESTS_CA_BUNDLE")
     os.environ["REQUESTS_CA_BUNDLE"] = str(cert_file)
+    for kind, event_uuid in constants.PUSH_EVENT_TYPES.items():
+        models.EventType(uuid=event_uuid, name=kind, project_id=uuid.uuid4()).insert()
     driver = TestIamDriver()
     application = app.build_wsgi_application(driver)
 
