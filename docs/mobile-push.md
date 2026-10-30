@@ -24,7 +24,7 @@ snapshot for each device without reading the message or looking up an IAM profil
 Only the central sender holds Firebase credentials. Set
 `push.local_organization_uuid` to its Workspace installation UUID. An authorized
 foreign source uses the configured defaults rather than this installation's user
-bindings. The optional forwarding transport is introduced separately.
+bindings. The optional forwarding transport is described in the [relay guide](push-relay.md).
 
 ## Device registration
 
@@ -223,8 +223,8 @@ deferred. They must later call this same API; they must not bypass its routing.
 Deploy the email/base change first; email authentication and rollout are described
 in [the email guide](email.md). This release adds the Firebase protocol, encrypted
 mobile event models, per-device rendering and migration 0001 (delivery errors,
-inactive-token fingerprints and parent-status aggregation). It does not include
-the forwarding protocol. Install `notification_email` only if SMTP is needed.
+inactive-token fingerprints and parent-status aggregation). The forwarding protocol is configured separately; see the
+[relay guide](push-relay.md). Install `notification_email` only if SMTP is needed.
 
 Build and deploy immutable Notification and Workspace images through the standard
 platform tooling, preserving database/config backups. Do not patch installed

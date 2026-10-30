@@ -139,6 +139,8 @@ class EventController(ra_controllers.BaseResourceController):
 
     def create(self, **kwargs):
         mobile = push.is_push_event(kwargs["event_type"], kwargs["event_params"])
+        if self.request.headers.get("X-Notification-Relay") == "1" and not mobile:
+            raise iam_exceptions.Forbidden()
         if mobile:
             for field in (
                 "created_at",
@@ -163,6 +165,9 @@ class EventController(ra_controllers.BaseResourceController):
 
     def get(self, uuid, **kwargs):
         event = super().get(uuid, **kwargs)
+        mobile = push.is_push_event(event.event_type, event.event_params)
+        if self.request.headers.get("X-Notification-Relay") == "1" and not mobile:
+            raise iam_exceptions.Forbidden()
         self._authorize(event, "read")
         return event
 

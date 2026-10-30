@@ -120,3 +120,7 @@ The optional Firebase transport uses ordinary Event, Template and Provider
 resources to deliver encrypted Android data payloads. Install
 `notification_firebase.yaml.j2` only on the central sender with private Firebase
 credentials. See the [mobile contract and Firebase guide](docs/mobile-push.md).
+
+For installations forwarding to that sender, the separate
+[`notification_relay` element](docs/push-relay.md) sends the same encrypted Events
+through HTTPS and needs only its upstream IAM credentials.

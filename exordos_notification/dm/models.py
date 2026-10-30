@@ -25,6 +25,7 @@ from email.mime import multipart, text
 
 import jinja2
 import zulip
+from bazooka import exceptions as http_exceptions
 from gcl_sdk.agents.universal.dm import models as ua_models
 from psycopg.types import json as sql_json
 from restalchemy.common import exceptions
@@ -173,6 +174,42 @@ class ZulipProtocol(types_dynamic.AbstractKindModel):
             raise RuntimeError(f"Failed to send message: {result['msg']}")
 
 
+class NotificationProtocol(types_dynamic.AbstractKindModel):
+    KIND = "notification"
+
+    endpoint = properties.property(types.Url(), required=True)
+    auth_file = properties.property(types.String(min_length=1), required=True)
+
+    def send(self, content, user_context):
+        client = transports.relay_client(self.endpoint, self.auth_file)
+        payload = content.payload
+        try:
+            result = client.get("/v1/events/", payload["uuid"])
+        except http_exceptions.NotFoundError:
+            try:
+                result = client.create("/v1/events/", data=payload)
+            except http_exceptions.ConflictError:
+                result = client.get("/v1/events/", payload["uuid"])
+        errors = result.get("errors", [])
+        if result["status"] in ("NEW", "IN_PROGRESS"):
+            raise transports.DeliveryPending(errors)
+        if errors:
+            permanent = all(
+                error.get(
+                    "permanent", error.get("code") == "registration_token_inactive"
+                )
+                for error in errors
+            )
+            raise transports.DeliveryError(
+                "upstream_delivery_failed", errors, permanent
+            )
+        if result["status"] == "ACTIVE":
+            return
+        if result["status"] == "ERROR":
+            raise transports.DeliveryError("upstream_delivery_failed")
+        raise transports.DeliveryPending()
+
+
 class FirebaseProtocol(types_dynamic.AbstractKindModel):
     KIND = "firebase"
 
@@ -290,6 +327,7 @@ class Provider(
             types_dynamic.KindModelType(SimpleSmtpProtocol),
             types_dynamic.KindModelType(StartTlsSmtpProtocol),
             types_dynamic.KindModelType(ZulipProtocol),
+            types_dynamic.KindModelType(NotificationProtocol),
             types_dynamic.KindModelType(FirebaseProtocol),
         ),
         required=True,
@@ -304,6 +342,9 @@ class Provider(
                     "registration_token": content.registration_token,
                 }
             ]
+        elif isinstance(self.protocol, NotificationProtocol):
+            scope = f"notification:{self.protocol.endpoint.rstrip('/')}"
+            targets = content.payload["event_params"]["devices"]
         else:
             return self.protocol.send(content=content, user_context=user_context)
 
@@ -326,9 +367,20 @@ class Provider(
             raise transports.DeliveryError(
                 "registration_token_inactive", inactive, permanent=True
             )
+        outgoing = content
+        if inactive and isinstance(self.protocol, NotificationProtocol):
+            outgoing = RenderedNotificationContent(
+                payload={
+                    **content.payload,
+                    "event_params": {
+                        **content.payload["event_params"],
+                        "devices": active,
+                    },
+                }
+            )
         try:
-            self.protocol.send(content=content, user_context=user_context)
-        except transports.DeliveryError as error:
+            self.protocol.send(content=outgoing, user_context=user_context)
+        except (transports.DeliveryError, transports.DeliveryPending) as error:
             rejected = {
                 item["device_uuid"]
                 for item in error.errors
@@ -342,6 +394,8 @@ class Provider(
             errors = error.errors + [
                 item for item in inactive if item not in error.errors
             ]
+            if isinstance(error, transports.DeliveryPending):
+                raise transports.DeliveryPending(errors) from None
             raise transports.DeliveryError(
                 error.code,
                 errors,
@@ -477,6 +531,20 @@ ZULIP_MESSAGE_TYPE_MAP = {
 }
 
 
+class RenderedNotificationContent(AbstractContent):
+    KIND = "rendered_notification"
+
+    payload = properties.property(types.Dict(), required=True)
+
+
+class NotificationContent(AbstractContent):
+    KIND = "notification"
+    requires_user_context = False
+
+    def render(self, params):
+        return RenderedNotificationContent(payload=params["_notification_event"])
+
+
 class RenderedMobilePushContent(AbstractContent):
     KIND = "rendered_mobile_push"
 
@@ -550,6 +618,7 @@ class Template(
             types_dynamic.KindModelType(EmailContent),
             types_dynamic.KindModelType(ZulipStreamMessageContent),
             types_dynamic.KindModelType(ZulipDirectMessageContent),
+            types_dynamic.KindModelType(NotificationContent),
             types_dynamic.KindModelType(MobilePushContent),
         ),
         required=True,
@@ -779,8 +848,14 @@ class Event(
                 contents = [contents]
             for content in contents:
                 extra = {}
-                if isinstance(content, RenderedMobilePushContent):
-                    target = str(content.device_uuid)
+                if isinstance(
+                    content, (RenderedMobilePushContent, RenderedNotificationContent)
+                ):
+                    target = (
+                        str(content.device_uuid)
+                        if isinstance(content, RenderedMobilePushContent)
+                        else "relay"
+                    )
                     extra["uuid"] = sys_uuid.uuid5(
                         self.uuid, f"{template.uuid}:{target}"
                     )
@@ -853,6 +928,7 @@ class RenderedEvent(
             types_dynamic.KindModelType(RenderedEmailContent),
             types_dynamic.KindModelType(RenderedStreamMessageContent),
             types_dynamic.KindModelType(RenderedDirectMessageContent),
+            types_dynamic.KindModelType(RenderedNotificationContent),
             types_dynamic.KindModelType(RenderedMobilePushContent),
         ),
         required=True,
@@ -877,6 +953,13 @@ class RenderedEvent(
                 content=self.content,
                 user_context=self.user_context,
             )
+        except transports.DeliveryPending as pending:
+            self.errors = pending.errors
+            self.status = self.STATUS.IN_PROGRESS.value
+            self.status_description = "Waiting for upstream"
+            self.next_retry_at = next_time(3)()
+            self.update()
+            return
         except transports.DeliveryError as error:
             self.errors = error.errors
             if not self.errors:
@@ -894,7 +977,9 @@ class RenderedEvent(
                 self.update()
             return
         except Exception as e:
-            if isinstance(self.content, RenderedMobilePushContent):
+            if isinstance(
+                self.content, (RenderedNotificationContent, RenderedMobilePushContent)
+            ):
                 LOG.warning("Transport request failed for event %s", self.event_id)
                 self.errors = [{"code": "transport_error", "permanent": False}]
                 self.set_error_status("transport_error")
