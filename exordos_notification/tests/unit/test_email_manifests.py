@@ -1,7 +1,6 @@
 # Copyright 2026 Genesis Corporation.
 # Licensed under the Apache License, Version 2.0 (the "License").
 import pathlib
-import subprocess
 import uuid
 
 import jinja2
@@ -46,17 +45,17 @@ def test_service_and_email_are_independent_elements(trim_blocks):
     )
     assert set(email["requirements"]) == {"exordos_notification", "mailaas"}
     assert "$core.compute.nodes" not in email["resources"]
-    assert "core_events_conf" in email["resources"]["$core.config.configs"]
+    assert "$core.config.configs" not in email["resources"]
     assert "notification_mail" in email["resources"]["$mailaas.types.mail.instances"]
-    assert (
-        email["resources"]["$exordos_notification.types.email.event_types"][
-            "email_confirmation"
-        ]["uuid"]
-        == "e0fe8070-e59c-4347-8df1-b3f638c06565"
-    )
+    assert "$exordos_notification.types.email.event_types" not in email["resources"]
+    assert "$exordos_notification.types.email.templates" not in email["resources"]
+    assert "$core.iam.users" not in email["resources"]
+    assert "$core.iam.tokens" not in email["resources"]
+    assert set(email["imports"]) == {"exim4_1"}
     for filename in ("site_config.yaml.j2", "notification_site_config_example.yaml.j2"):
         site = yaml.safe_load(environment.get_template(filename).render(**values))
         assert set(site["requirements"]) == {"notification_email"}
+        assert set(site["resources"]) == {"$core.vs.values"}
         for imported in site["imports"].values():
             assert imported["element"] == "$notification_email"
             assert imported["link"] in {
@@ -85,81 +84,6 @@ def test_base_manifest_supports_cli_name_probe_before_jinja_rendering():
     # before rendering Jinja. Selected-element builds can mask this failure.
     manifest = yaml.safe_load((ROOT / "exordos_notification.yaml.j2").read_text())
     assert manifest["name"] == "exordos_notification"
-
-
-def test_email_sender_uses_platform_managed_token_and_minimal_permissions():
-    environment = jinja2.Environment(loader=jinja2.FileSystemLoader(ROOT))
-    manifest = yaml.safe_load(
-        environment.get_template("notification_email.yaml.j2").render(
-            version="1.2.8-dev"
-        )
-    )
-    resources = manifest["resources"]
-    config = resources["$core.config.configs"]["core_events_conf"]
-    assert config["mode"] == "0600"
-    settings = config["body"]["content"]
-    token_config = resources["$core.config.configs"]["core_events_token"]
-    assert token_config["mode"] == "0600"
-    assert (
-        "exordos_api_token = {$core.iam.tokens.$core_event_sender:access_token}"
-        in token_config["body"]["content"]
-    )
-    assert "exordos_api_token" not in settings
-    assert "client_type = async" in settings
-    assert "systemctl restart ec-gservice" in config["on_change"]["command"]
-    assert resources["$core.iam.users"]["core_event_sender"]["type"] == "service"
-    token = resources["$core.iam.tokens"]["core_event_sender"]
-    assert token["auto_renew"] is True
-    assert token["expiration_delta"] == 604800
-    assert token["scope"] == ""
-    assert "core_event_sender" not in resources["$core.secret.passwords"]
-    assert {v["name"] for v in resources["$core.iam.permissions"].values()} == {
-        "exordos_notification.event_type_e0fe8070-e59c-4347-8df1-b3f638c06565.create",
-        "exordos_notification.event_type_e0fe8070-e59c-4347-8df1-b3f638c06565.read",
-    }
-
-
-@pytest.mark.parametrize(
-    "missing", [None, "core_event_type_mapping", "core_events_conf"]
-)
-@pytest.mark.parametrize("restart_code", [0, 7])
-def test_email_token_rotation_restarts_sender_without_interrupting_core_api(
-    tmp_path, missing, restart_code
-):
-    manifest = yaml.safe_load(
-        jinja2.Environment(loader=jinja2.FileSystemLoader(ROOT))
-        .get_template("notification_email.yaml.j2")
-        .render(version="1.2.11-dev")
-    )
-    configs = manifest["resources"]["$core.config.configs"]
-    for name, config in configs.items():
-        if name == missing:
-            continue
-        path = tmp_path / config["path"].lstrip("/")
-        path.parent.mkdir(parents=True, exist_ok=True)
-        path.write_text(config["body"]["content"])
-    calls = tmp_path / "systemctl-calls"
-    systemctl = tmp_path / "systemctl"
-    systemctl.write_text(
-        f'#!/bin/sh\nprintf "%s\\n" "$*" >> "{calls}"\nexit {restart_code}\n'
-    )
-    systemctl.chmod(0o700)
-    rotating = [
-        config
-        for config in configs.values()
-        if "exordos_api_token =" in config["body"]["content"]
-    ]
-    assert len(rotating) == 1
-    command = rotating[0]["on_change"]["command"]
-    command = command.replace("/etc/exordos_core/", f"{tmp_path}/etc/exordos_core/")
-    result = subprocess.run(
-        ["/bin/sh", "-ec", command],
-        env={"PATH": str(tmp_path)},
-        check=False,
-    )
-    actual = calls.read_text().splitlines() if calls.exists() else []
-    assert actual == ([] if missing else ["restart ec-gservice"])
-    assert result.returncode == (0 if missing else restart_code)
 
 
 def test_managed_iam_settings_override_legacy_generated_config(tmp_path):
