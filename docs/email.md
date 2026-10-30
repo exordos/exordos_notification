@@ -42,6 +42,12 @@ templates until their element ownership and imports have been migrated. Do not
 install a second copy of the same event type or remove a working SMTP relay to
 adopt the new ownership layout.
 
+The initial 2.0.0 email element also owned Core's sender configuration and event
+type, while its site configuration owned the confirmation template. Adopting
+`core_notification_email` moves these resources to Core. Preserve existing
+tokens, event types and customized templates until their ownership has been
+migrated; do not install duplicate resources or delete the working transport.
+
 Provision the managed token and verify its config delivery before deploying
 Notification's mandatory authentication. Keep the email EventType UUID and
 existing v1 payload. Test an actual Core registration through queued event,

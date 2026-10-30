@@ -25,11 +25,11 @@ With `mailaas` available, install email separately:
 exordos em elements install notification_email
 ```
 
-This adds the SMTP relay/account, provider and sender variables. Application
-event types, letter templates and sender configuration belong to the producing
-application. All Event submissions and status reads require authorization. See the
-[email authentication and rollout guide](docs/email.md)
-([на русском](docs/email.ru.md)).
+This adds the SMTP relay/account, sender variables, email confirmation event type
+and Core registration-event configuration. The email sender uses a platform-managed
+IAM service token with automatic renewal and a restricted config drop-in; all
+Event submissions and status reads require authorization. See the
+[email authentication and rollout guide](docs/email.md).
 
 ### 3. Configure email site settings
 
@@ -46,14 +46,6 @@ exordos em elements install exordos/manifests/site_config.yaml.j2
 
 The `notification_site_config` element must be installed **once per deployment** after `notification_email` is active. Reinstalling the base or email element will not overwrite it.
 
-### 4. Enable Core email events
-
-Install `core_notification_email` from the Core repository. Its requirements
-automatically pull in `notification_email` and the base service. It supplies
-Core's registration event type and confirmation letter template, provisions a
-managed IAM token, and configures Core's existing asynchronous SDK sender.
-Installing the common email transport alone does not enable Core delivery.
-
 ### Existing combined-element installations
 
 The previous base manifest owned email resources and exported the sender variables
@@ -63,12 +55,6 @@ configuration still imports the old exports. Preserve the installed manifest and
 SMTP/database state. A data-preserving ownership/import migration must be tested
 on a copy of that installation before rollout. The new element layout is ready
 for fresh installations; the combined-installation migration remains **NOT RUN**.
-
-The initial 2.0.0 email element also owned Core's sender configuration and event
-type, while its site configuration owned the confirmation template. Adopting
-`core_notification_email` moves these resources to Core. Preserve existing
-tokens, event types and customized templates until their ownership has been
-migrated; do not install duplicate resources or delete the working transport.
 
 ## Architecture
 
