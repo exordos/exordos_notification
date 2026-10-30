@@ -1,0 +1,85 @@
+# Install on each Notification server accepting this installation's events.
+# Local sources import the transport identity; upstream sources pass its exported UUID.
+# Retrieve the generated service password only into KeePass/operator memory.
+# {% set source_name = 'notification_push_source_' ~ organization_uuid if organization_uuid is defined else 'notification_push_source' %}
+# {% set organization = organization_uuid if organization_uuid is defined else '{$' ~ source_name ~ '.imports.$organization_uuid:value}' %}
+# {% set f = '' if organization_uuid is defined else 'f"' %}
+# {% set end_quote = '' if organization_uuid is defined else '"' %}
+name: "{{ source_name }}"
+description: "Authorized Workspace push source"
+schema_version: 1
+version: "{{ version | default('1.0.0') }}"
+api_version: "v1"
+requirements:
+  exordos_notification:
+    from_version: "1.2.8-dev"
+# {% if organization_uuid is not defined %}
+  "{{ notification_transport | default('notification_firebase') }}":
+    from_version: "1.0.0"
+# {% endif %}
+imports:
+# {% if organization_uuid is not defined %}
+  organization_uuid:
+    element: "${{ notification_transport | default('notification_firebase') }}"
+    kind: resource
+    link: "$core.vs.variables.$organization_uuid"
+# {% endif %}
+  event_type_read:
+    element: "$exordos_notification"
+    kind: resource
+    link: "$core.iam.permissions.$event_type_read"
+resources:
+  $core.iam.permissions:
+    source_create:
+      name: >-
+        {{ f }}exordos_notification.source_{{ organization }}.create{{ end_quote }}
+    source_read:
+      name: >-
+        {{ f }}exordos_notification.source_{{ organization }}.read{{ end_quote }}
+  $core.iam.roles:
+    source:
+      name: >-
+        {{ f }}workspace-push-{{ organization }}{{ end_quote }}
+      project_id: null
+  $core.iam.permissionbinding:
+    event_type_read:
+      role: $core.iam.roles.$source:uuid
+      permission: ${{ source_name }}.imports.$event_type_read:uuid
+      project_id: null
+    create:
+      role: $core.iam.roles.$source:uuid
+      permission: $core.iam.permissions.$source_create:uuid
+      project_id: null
+    read:
+      role: $core.iam.roles.$source:uuid
+      permission: $core.iam.permissions.$source_read:uuid
+      project_id: null
+  $core.secret.passwords:
+    source_password:
+      name: >-
+        {{ f }}workspace-push-{{ organization }}{{ end_quote }}
+      project_id: "12345678-c625-4fee-81d5-f691897b8142"
+      constructor:
+        kind: plain
+      method: AUTO_HEX
+  $core.iam.users:
+    source:
+      username: >-
+        {{ f }}workspace-push-{{ organization }}{{ end_quote }}
+      first_name: Workspace
+      last_name: Push
+      email: >-
+        {{ f }}noreply+workspace-push-{{ organization }}@exordos.com{{ end_quote }}
+      password: $core.secret.passwords.$source_password:value
+  $core.iam.rolebinding:
+    source:
+      role: $core.iam.roles.$source:uuid
+      user: $core.iam.users.$source:uuid
+      project: null
+exports:
+  service_user:
+    link: "$core.iam.users.$source"
+    kind: resource
+  service_password:
+    link: "$core.secret.passwords.$source_password"
+    kind: resource

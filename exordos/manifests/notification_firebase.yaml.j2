@@ -1,0 +1,121 @@
+# Site-specific Firebase mobile-push sender. Sender credentials stay on this installation.
+# Deliver private credential files separately as restricted Core config resources.
+name: "notification_firebase"
+description: "Workspace mobile push transport"
+schema_version: 1
+version: "{{ version | default('1.0.0') }}"
+api_version: "v1"
+requirements:
+  exordos_notification:
+    from_version: "1.2.8-dev"
+imports:
+  backend_node:
+    element: "$exordos_notification"
+    kind: resource
+    link: "$core.compute.nodes.$notification_cp"
+resources:
+  # The UUID belongs to this persistent resource, so updates keep the identity.
+  $core.vs.variables:
+    organization_uuid:
+      name: notification_organization_uuid
+      project_id: "12345678-c625-4fee-81d5-f691897b8142"
+      setter:
+        kind: selector
+        selector_strategy: latest
+  $core.vs.values:
+    organization_uuid:
+      project_id: "12345678-c625-4fee-81d5-f691897b8142"
+      variable: $core.vs.variables.$organization_uuid:uuid
+      value: $self:uuid
+
+  $core.config.configs:
+    source_identity:
+      project_id: "12345678-c625-4fee-81d5-f691897b8142"
+      path: /etc/exordos_notification/exordos_notification.conf.d/90-mobile-push.conf
+      mode: "0600"
+      target:
+        kind: node
+        node: $notification_firebase.imports.$backend_node:uuid
+      on_change:
+        kind: shell
+        command: systemctl restart exordos-notification-user-api exordos-notification-builder-agent exordos-notification-mail-agent
+      body:
+        kind: text
+        content: |
+          f"
+          [push]
+          local_organization_uuid = {$core.vs.variables.$organization_uuid:value}
+          "
+
+  $exordos_notification.types.email.providers:
+    mobile_push:
+      project_id: "12345678-c625-4fee-81d5-f691897b8142"
+      name: "Mobile push"
+      description: "Encrypted Workspace mobile push"
+      status: ACTIVE
+      protocol:
+        kind: "firebase"
+
+        firebase_project_id: "{{ firebase_project_id }}"
+        credentials_file: /etc/exordos_notification/firebase-service-account.json
+        ttl_seconds: 3600
+
+
+  $exordos_notification.types.email.event_types:
+    notification_message_create:
+      uuid: "120f3970-14e5-5997-bdc2-daca77fbf894"
+      project_id: "12345678-c625-4fee-81d5-f691897b8142"
+      name: notification_message_create
+      status: ACTIVE
+    notification_message_cancel:
+      uuid: "0abcf177-2b7f-5af9-a759-84fafdf9b271"
+      project_id: "12345678-c625-4fee-81d5-f691897b8142"
+      name: notification_message_cancel
+      status: ACTIVE
+
+    notification_topic_update:
+      uuid: "aba6e448-3b72-51ef-b0c6-d2e3be17efe7"
+      project_id: "12345678-c625-4fee-81d5-f691897b8142"
+      name: notification_topic_update
+      status: ACTIVE
+
+  $exordos_notification.types.email.templates:
+
+    notification_message_create:
+      project_id: "12345678-c625-4fee-81d5-f691897b8142"
+      name: "notification_message_create mobile push"
+      status: ACTIVE
+      provider: $exordos_notification.types.email.providers.$mobile_push:uuid
+      event_type: $exordos_notification.types.email.event_types.$notification_message_create:uuid
+      is_default: true
+      params: {}
+      content:
+        kind: "mobile_push"
+
+    notification_message_cancel:
+      project_id: "12345678-c625-4fee-81d5-f691897b8142"
+      name: "notification_message_cancel mobile push"
+      status: ACTIVE
+      provider: $exordos_notification.types.email.providers.$mobile_push:uuid
+      event_type: $exordos_notification.types.email.event_types.$notification_message_cancel:uuid
+      is_default: true
+      params: {}
+      content:
+        kind: "mobile_push"
+
+    notification_topic_update:
+      project_id: "12345678-c625-4fee-81d5-f691897b8142"
+      name: "notification_topic_update mobile push"
+      status: ACTIVE
+      provider: $exordos_notification.types.email.providers.$mobile_push:uuid
+      event_type: $exordos_notification.types.email.event_types.$notification_topic_update:uuid
+      is_default: true
+      params: {}
+      content:
+        kind: "mobile_push"
+
+
+exports:
+  organization_uuid:
+    link: "$core.vs.variables.$organization_uuid"
+    kind: resource
