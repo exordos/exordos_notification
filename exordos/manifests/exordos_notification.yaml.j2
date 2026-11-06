@@ -233,7 +233,7 @@ resources:
       parent: $exordos_notification.imports.$core_lb_http_vhost:uuid
       condition:
         kind: regex
-        value: "^/api/notification/v1/(providers|event_types|templates)(/.*)?$"
+        value: /api/notification/
         allowed_ips:
           - 0.0.0.0/0
         actions:
@@ -248,9 +248,7 @@ resources:
               - 'X-Forwarded-For'
               - 'X-Forwarded-Port'
               - 'X-Forwarded-Proto'
-          - kind: set_header
-            name: X-Forwarded-Prefix
-            value: /api/notification
+              - 'X-Forwarded-Prefix'
           - kind: rewrite_url
             regex: "^/api/notification/(.*)"
             replacement: "/$1"
