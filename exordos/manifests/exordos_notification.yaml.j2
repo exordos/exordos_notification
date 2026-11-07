@@ -232,7 +232,7 @@ resources:
       project_id: "12345678-c625-4fee-81d5-f691897b8142"
       parent: $exordos_notification.imports.$core_lb_http_vhost:uuid
       condition:
-        kind: regex
+        kind: prefix
         value: /api/notification/
         allowed_ips:
           - 0.0.0.0/0
