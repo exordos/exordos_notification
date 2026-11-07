@@ -254,6 +254,12 @@ resources:
             replacement: "/$1"
 
 exports:
+  event_create:
+    kind: resource
+    link: "$core.iam.permissions.$event_create"
+  event_read:
+    kind: resource
+    link: "$core.iam.permissions.$event_read"
   notification_cluster_pg:
     link: "$dbaas.types.postgres.instances.$notification_cluster_pg"
   notification_cp:
