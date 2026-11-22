@@ -123,7 +123,10 @@ def test_relay_forwards_once_and_follows_upstream_status(
         transports.relay_destination.cache_clear()
 
 
-def test_retired_user_binding_falls_back_to_current_firebase_template(database):
+@pytest.mark.parametrize("keep_email_binding", (False, True))
+def test_retired_user_binding_falls_back_to_current_firebase_template(
+    database, keep_email_binding
+):
     project = uuid.uuid4()
     event_type = models.EventType(project_id=project, name="Push")
     event = models.Event(
@@ -163,4 +166,35 @@ def test_retired_user_binding_falls_back_to_current_firebase_template(database):
         template=legacy,
         user=event.exchange.user_uuid,
     ).insert()
-    assert event.get_templates() == [current]
+    expected = [current]
+    if keep_email_binding:
+        smtp = models.Provider(
+            project_id=project,
+            name="SMTP",
+            protocol=models.SimpleSmtpProtocol(
+                host="smtp.example.com",
+                port=25,
+                noreply_email_address="sender@example.com",
+            ),
+        )
+        smtp.insert()
+        email = models.Template(
+            project_id=project,
+            name="Email",
+            provider=smtp,
+            event_type=event_type,
+            is_default=False,
+            params={},
+            content=models.EmailContent(title="Email", bodies=[]),
+        )
+        email.insert()
+        models.Binding(
+            project_id=project,
+            event_type=event_type,
+            template=email,
+            user=event.exchange.user_uuid,
+        ).insert()
+        expected.append(email)
+    assert {template.uuid for template in event.get_templates()} == {
+        template.uuid for template in expected
+    }
