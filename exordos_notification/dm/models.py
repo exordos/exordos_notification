@@ -26,6 +26,7 @@ from email.mime import multipart, text
 import jinja2
 import requests
 import zulip
+from bazooka import exceptions as http_exceptions
 from gcl_sdk.agents.universal.dm import models as ua_models
 from google.auth import exceptions as google_auth_exceptions
 from psycopg.types import json as sql_json
@@ -317,6 +318,75 @@ class FirebaseProtocol(types_dynamic.AbstractKindModel):
         )
 
 
+class NotificationRelayProtocol(types_dynamic.AbstractKindModel):
+    KIND = "notification_relay"
+
+    def send(self, content, user_context, destination):
+        client, event_type, project, _ = destination
+        event_id = str(content.event_uuid)
+        device_id = str(content.device_uuid)
+        try:
+            try:
+                remote = client.get("/v1/events/", event_id)
+            except http_exceptions.NotFoundError:
+                try:
+                    client.create(
+                        "/v1/events/",
+                        data={
+                            "uuid": event_id,
+                            "project_id": project,
+                            "event_type": f"/v1/event_types/{event_type}",
+                            "exchange": {"kind": "System"},
+                            "event_params": {
+                                "device_uuid": device_id,
+                                "registration_token": content.registration_token,
+                                "payload": content.data["payload"],
+                                "priority": content.priority,
+                            },
+                            "last_retry_at": content.expires_at.isoformat(),
+                        },
+                    )
+                except http_exceptions.ConflictError:
+                    # A previous submission may have committed before its reply arrived.
+                    pass
+                raise transports.DeliveryPending() from None
+        except (http_exceptions.ForbiddenError, http_exceptions.UnauthorizedError):
+            raise transports.DeliveryError(
+                "relay_access_denied", permanent=True
+            ) from None
+        except (transports.DeliveryError, transports.DeliveryPending):
+            raise
+        except (
+            http_exceptions.BaseHTTPException,
+            requests.exceptions.RequestException,
+            KeyError,
+            TypeError,
+            ValueError,
+        ):
+            raise transports.DeliveryError("relay_transport_error") from None
+
+        status = remote.get("status")
+        if status == StatusMixin.STATUS.ACTIVE.value:
+            return
+        if status != StatusMixin.STATUS.ERROR.value:
+            raise transports.DeliveryPending()
+        errors = remote.get("errors", [])
+        if any(
+            error.get("code") == "registration_token_inactive"
+            and error.get("device_uuid") == device_id
+            and error.get("permanent") is True
+            for error in errors
+        ):
+            raise transports.DeliveryError(
+                "registration_token_inactive",
+                [{"code": "registration_token_inactive", "device_uuid": device_id}],
+                permanent=True,
+            )
+        if errors and all(error.get("permanent") is True for error in errors):
+            raise transports.DeliveryError("relay_upstream_rejected", permanent=True)
+        raise transports.DeliveryPending()
+
+
 class FirebaseProtocolType(types_dynamic.KindModelSelectorType):
     """Read the obsolete provider shape without honoring its credential path."""
 
@@ -365,21 +435,24 @@ class Provider(
             types_dynamic.KindModelType(StartTlsSmtpProtocol),
             types_dynamic.KindModelType(ZulipProtocol),
             types_dynamic.KindModelType(FirebaseProtocol),
+            types_dynamic.KindModelType(NotificationRelayProtocol),
         ),
         required=True,
     )
 
     def send(self, content, user_context):
-        if not isinstance(self.protocol, FirebaseProtocol):
-            return self.protocol.send(
-                content=content,
-                user_context=user_context,
-            )
+        if isinstance(self.protocol, FirebaseProtocol):
+            self.protocol.validate_content(content)
+            firebase = self.protocol.get_session(content)
+            scope = f"firebase:{firebase[1]}"
+            transport = {"firebase": firebase}
+        elif isinstance(self.protocol, NotificationRelayProtocol):
+            destination = transports.relay_destination()
+            scope = destination[3]
+            transport = {"destination": destination}
+        else:
+            return self.protocol.send(content=content, user_context=user_context)
 
-        self.protocol.validate_content(content)
-        firebase = self.protocol.get_session(content)
-        _, project_id = firebase
-        scope = f"firebase:{project_id}"
         inactive = InactiveToken.identify(scope, content.registration_token)
         if InactiveToken.objects.get_one_or_none(
             filters={"uuid": filters.EQ(inactive.uuid)}
@@ -399,7 +472,7 @@ class Provider(
             return self.protocol.send(
                 content=content,
                 user_context=user_context,
-                firebase=firebase,
+                **transport,
             )
         except transports.DeliveryError as error:
             if any(
@@ -598,6 +671,28 @@ class FirebaseAndroidContent(AbstractContent):
         )
 
 
+class RenderedNotificationRelayContent(RenderedFirebaseAndroidContent):
+    KIND = "rendered_notification_relay"
+
+    event_uuid = properties.property(types.UUID(), required=True)
+    expires_at = properties.property(types.UTCDateTimeZ(), required=True)
+
+
+class NotificationRelayContent(AbstractContent):
+    KIND = "notification_relay"
+    requires_user_context = False
+
+    def render(self, params, *, event):
+        return RenderedNotificationRelayContent(
+            event_uuid=event.uuid,
+            expires_at=event.last_retry_at,
+            device_uuid=sys_uuid.UUID(str(params["device_uuid"])),
+            registration_token=params["registration_token"],
+            data={"payload": params["payload"]},
+            priority=params.get("priority", "normal"),
+        )
+
+
 class LegacyRenderedMobilePushContent(AbstractContent):
     """Stored content from the removed relay topology."""
 
@@ -619,48 +714,6 @@ class LegacyMobilePushContent(AbstractContent):
     KIND = "mobile_push"
     requires_user_context = False
 
-    def render(self, params):
-        event = params["_notification_event"]
-        route = {
-            "uuid": event["uuid"],
-            "user_uuid": event["exchange"]["user_uuid"],
-            "message_uuid": event["event_params"].get("message_uuid"),
-            **{
-                field: event["event_params"][field]
-                for field in (
-                    "kind",
-                    "organization_uuid",
-                    "project_uuid",
-                    "stream_uuid",
-                    "topic_uuid",
-                )
-            },
-        }
-        result = []
-        for device in event["event_params"]["devices"]:
-            if device["content"]["kind"] != "encrypted":
-                raise exceptions.ValidationErrorException()
-            result.append(
-                LegacyRenderedMobilePushContent(
-                    device_uuid=sys_uuid.UUID(device["device_uuid"]),
-                    registration_token=device["registration_token"],
-                    payload={
-                        **route,
-                        "device_uuid": device["device_uuid"],
-                        "content": device["content"],
-                    },
-                    expires_at=params["_notification_expires_at"],
-                    priority=event["event_params"].get(
-                        "priority",
-                        "high"
-                        if event["event_params"]["kind"]
-                        == "notification_message_create"
-                        else "normal",
-                    ),
-                )
-            )
-        return result
-
 
 class Template(
     models.ModelWithUUID,
@@ -679,6 +732,7 @@ class Template(
             types_dynamic.KindModelType(ZulipStreamMessageContent),
             types_dynamic.KindModelType(ZulipDirectMessageContent),
             types_dynamic.KindModelType(FirebaseAndroidContent),
+            types_dynamic.KindModelType(NotificationRelayContent),
             types_dynamic.KindModelType(LegacyMobilePushContent),
         ),
         required=True,
@@ -884,7 +938,12 @@ class Event(
         for template in templates:
             params = context.copy()
             params.update(self.event_params)
-            rendered_content = template.content.render(params)
+            render_options = (
+                {"event": self}
+                if isinstance(template.content, NotificationRelayContent)
+                else {}
+            )
+            rendered_content = template.content.render(params, **render_options)
             rendered_events.append(
                 RenderedEvent(
                     content=rendered_content,
@@ -906,18 +965,24 @@ class Event(
                     "user": filters.EQ(self.exchange.user_uuid),
                 }
             )
-            if bindings:
-                return list(
-                    {
-                        binding.template.uuid: binding.template for binding in bindings
-                    }.values()
-                )
-        return Template.objects.get_all(
+            selected = {
+                binding.template.uuid: binding.template
+                for binding in bindings
+                if not isinstance(binding.template.content, LegacyMobilePushContent)
+            }
+            if selected:
+                return list(selected.values())
+        defaults = Template.objects.get_all(
             filters={
                 "event_type": filters.EQ(self.event_type),
                 "is_default": filters.EQ(True),
             }
         )
+        return [
+            template
+            for template in defaults
+            if not isinstance(template.content, LegacyMobilePushContent)
+        ]
 
 
 class RenderedEvent(
@@ -934,6 +999,7 @@ class RenderedEvent(
             types_dynamic.KindModelType(RenderedStreamMessageContent),
             types_dynamic.KindModelType(RenderedDirectMessageContent),
             types_dynamic.KindModelType(RenderedFirebaseAndroidContent),
+            types_dynamic.KindModelType(RenderedNotificationRelayContent),
             types_dynamic.KindModelType(LegacyRenderedMobilePushContent),
         ),
         required=True,
@@ -958,6 +1024,13 @@ class RenderedEvent(
                 content=self.content,
                 user_context=self.user_context,
             )
+        except transports.DeliveryPending:
+            self.status = self.STATUS.IN_PROGRESS.value
+            self.status_description = ""
+            self.errors = []
+            self.reset_next_retry(seconds=self.initial_transport_retry_delta)
+            self.update()
+            return
         except transports.DeliveryError as error:
             self.errors = error.errors or [{"code": error.code}]
             self.errors = [
