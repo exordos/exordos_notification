@@ -45,50 +45,111 @@ def inactive_failure(content):
     )
 
 
-def test_upgrade_deactivates_legacy_default_template(database):
-    project_id = uuid.uuid4()
-    provider = models.Provider(
-        name="Firebase",
-        project_id=project_id,
-        protocol=models.FirebaseProtocol(),
+@pytest.mark.parametrize("old_status", ["ACTIVE", "IN_PROGRESS"])
+def test_upgrade_removes_legacy_delivery_without_resending(database, old_status):
+    provider = firebase_provider()
+    project = provider.project_id
+    event_type = models.EventType(project_id=project, name="Push")
+    user = uuid.uuid4()
+    event = models.Event(
+        project_id=project,
+        event_type=event_type,
+        exchange=models.UserExchange(user_uuid=user),
+        event_params={},
+        status=old_status,
     )
-    event_type = models.EventType(project_id=project_id, name="push")
-    legacy = models.Template(
-        project_id=project_id,
-        name="legacy",
+    content = models.FirebaseAndroidContent(data={"payload": "{{ payload }}"})
+    old_template = models.Template(
+        project_id=project,
+        name="Legacy",
         provider=provider,
         event_type=event_type,
         params={},
-        content=models.LegacyMobilePushContent(),
-        is_default=True,
+        content=content,
+        is_default=False,
     )
     current = models.Template(
-        project_id=project_id,
-        name="current",
+        project_id=project,
+        name="Firebase",
         provider=provider,
         event_type=event_type,
         params={},
-        content=models.FirebaseAndroidContent(data={"payload": "{{ payload }}"}),
+        content=content,
         is_default=True,
     )
+    legacy_snapshot = models.RenderedEvent(
+        provider=provider,
+        content=firebase_content("legacy"),
+        event_id=event.uuid,
+        user_context={},
+    )
+    current_snapshot = models.RenderedEvent(
+        provider=provider,
+        content=firebase_content("current"),
+        event_id=uuid.uuid4(),
+        user_context={},
+    )
+    binding = models.Binding(
+        project_id=project,
+        event_type=event_type,
+        template=old_template,
+        user=user,
+    )
     with database.session_manager() as session:
-        provider.insert(session=session)
-        event_type.insert(session=session)
-        legacy.insert(session=session)
-        current.insert(session=session)
-        migration_path = (
+        for row in (
+            provider,
+            event_type,
+            event,
+            old_template,
+            current,
+            binding,
+            legacy_snapshot,
+            current_snapshot,
+        ):
+            row.insert(session=session)
+        session.execute(
+            """UPDATE templates SET content = '{"kind":"mobile_push"}' WHERE uuid = %s""",
+            (str(old_template.uuid),),
+        )
+        session.execute(
+            """UPDATE rendered_events SET content = '{"kind":"rendered_mobile_push"}' WHERE uuid = %s""",
+            (str(legacy_snapshot.uuid),),
+        )
+        path = (
             Path(__file__).resolve().parents[3]
             / "migrations"
-            / "0002-Deactivate-legacy-mobile-push-templates-29a44a.py"
+            / "0003-Remove-legacy-mobile-push-rows-a01606.py"
         )
-        runpy.run_path(str(migration_path))["migration_step"].upgrade(session)
+        runpy.run_path(str(path))["migration_step"].upgrade(session)
 
-    event = models.Event(
-        project_id=project_id,
-        event_type=event_type,
-        event_params={"payload": "encrypted"},
+    assert event.get_templates() == [current]
+    assert (
+        models.Binding.objects.get_one_or_none(
+            filters={"uuid": filters.EQ(binding.uuid)}
+        )
+        is None
     )
-    assert [template.uuid for template in event.get_templates()] == [current.uuid]
+    assert (
+        models.Template.objects.get_one_or_none(
+            filters={"uuid": filters.EQ(old_template.uuid)}
+        )
+        is None
+    )
+    assert (
+        models.RenderedEvent.objects.get_one_or_none(
+            filters={"uuid": filters.EQ(legacy_snapshot.uuid)}
+        )
+        is None
+    )
+    assert (
+        models.RenderedEvent.objects.get_one(
+            filters={"uuid": filters.EQ(current_snapshot.uuid)}
+        )
+        == current_snapshot
+    )
+    retired = models.Event.objects.get_one(filters={"uuid": filters.EQ(event.uuid)})
+    assert retired.next_retry_at > retired.last_retry_at
+    assert retired.status == ("ACTIVE" if old_status == "ACTIVE" else "ERROR")
 
 
 def test_inactive_token_is_cached_without_storing_the_token(database):

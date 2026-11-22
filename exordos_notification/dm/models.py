@@ -185,31 +185,10 @@ class FirebaseProtocol(types_dynamic.AbstractKindModel):
         default=3600,
     )
 
-    def _data(self, content):
-        if isinstance(content, RenderedFirebaseAndroidContent):
-            return content.data
-        return {
-            "payload": json.dumps(
-                content.payload,
-                ensure_ascii=False,
-                separators=(",", ":"),
-            )
-        }
-
-    def _ttl_seconds(self, content):
-        if not isinstance(content, LegacyRenderedMobilePushContent):
-            return self.ttl_seconds
-        now = datetime.datetime.now(datetime.timezone.utc)
-        ttl = min(self.ttl_seconds, int((content.expires_at - now).total_seconds()))
-        if ttl <= 0:
-            raise self.delivery_error(content, "expired", permanent=True)
-        return ttl
-
     def validate_content(self, content):
-        data = self._data(content)
         data_size = len(
             json.dumps(
-                data,
+                content.data,
                 ensure_ascii=False,
                 separators=(",", ":"),
             ).encode()
@@ -253,18 +232,16 @@ class FirebaseProtocol(types_dynamic.AbstractKindModel):
         self.validate_content(content)
 
         session, project_id = firebase or self.get_session(content)
-        data = self._data(content)
-        ttl_seconds = self._ttl_seconds(content)
         try:
             response = session.post(
                 f"https://fcm.googleapis.com/v1/projects/{project_id}/messages:send",
                 json={
                     "message": {
                         "token": content.registration_token,
-                        "data": data,
+                        "data": content.data,
                         "android": {
                             "priority": content.priority,
-                            "ttl": f"{ttl_seconds}s",
+                            "ttl": f"{self.ttl_seconds}s",
                         },
                     }
                 },
@@ -693,28 +670,6 @@ class NotificationRelayContent(AbstractContent):
         )
 
 
-class LegacyRenderedMobilePushContent(AbstractContent):
-    """Stored content from the removed relay topology."""
-
-    KIND = "rendered_mobile_push"
-    requires_user_context = False
-
-    device_uuid = properties.property(types.UUID(), required=True)
-    registration_token = properties.property(
-        types.String(min_length=1, max_length=4096), required=True
-    )
-    payload = properties.property(types.Dict(), required=True)
-    expires_at = properties.property(types.UTCDateTimeZ(), required=True)
-    priority = properties.property(types.Enum(["normal", "high"]), default="normal")
-
-
-class LegacyMobilePushContent(AbstractContent):
-    """Allow the agent to retire templates created by the old push element."""
-
-    KIND = "mobile_push"
-    requires_user_context = False
-
-
 class Template(
     models.ModelWithUUID,
     models.ModelWithRequiredNameDesc,
@@ -733,7 +688,6 @@ class Template(
             types_dynamic.KindModelType(ZulipDirectMessageContent),
             types_dynamic.KindModelType(FirebaseAndroidContent),
             types_dynamic.KindModelType(NotificationRelayContent),
-            types_dynamic.KindModelType(LegacyMobilePushContent),
         ),
         required=True,
     )
@@ -957,8 +911,6 @@ class Event(
         return rendered_events
 
     def get_templates(self):
-        selected = {}
-        push_contents = (FirebaseAndroidContent, NotificationRelayContent)
         if isinstance(self.exchange, UserExchange):
             bindings = Binding.objects.get_all(
                 filters={
@@ -967,38 +919,17 @@ class Event(
                     "user": filters.EQ(self.exchange.user_uuid),
                 }
             )
-            selected = {
-                binding.template.uuid: binding.template
-                for binding in bindings
-                if not isinstance(binding.template.content, LegacyMobilePushContent)
-            }
-            has_retired_push = any(
-                isinstance(binding.template.content, LegacyMobilePushContent)
-                for binding in bindings
-            )
-            has_current_push = any(
-                isinstance(template.content, push_contents)
-                for template in selected.values()
-            )
-            if selected and (not has_retired_push or has_current_push):
+            if bindings:
+                selected = {
+                    binding.template.uuid: binding.template for binding in bindings
+                }
                 return list(selected.values())
-        defaults = Template.objects.get_all(
+        return Template.objects.get_all(
             filters={
                 "event_type": filters.EQ(self.event_type),
                 "is_default": filters.EQ(True),
             }
         )
-        if selected:
-            return list(selected.values()) + [
-                template
-                for template in defaults
-                if isinstance(template.content, push_contents)
-            ]
-        return [
-            template
-            for template in defaults
-            if not isinstance(template.content, LegacyMobilePushContent)
-        ]
 
 
 class RenderedEvent(
@@ -1016,7 +947,6 @@ class RenderedEvent(
             types_dynamic.KindModelType(RenderedDirectMessageContent),
             types_dynamic.KindModelType(RenderedFirebaseAndroidContent),
             types_dynamic.KindModelType(RenderedNotificationRelayContent),
-            types_dynamic.KindModelType(LegacyRenderedMobilePushContent),
         ),
         required=True,
     )

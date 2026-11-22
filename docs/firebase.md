@@ -102,10 +102,9 @@ deadline, providing a safety margin if cleanup is delayed.
 `errors` list carries the device UUID and permanence flag. Provider response
 bodies, tokens and payloads are never copied into either result.
 
-## Upgrade from the relay transport
+## Upgrade from the retired push format
 
-The database migration disables legacy `mobile_push` templates as defaults.
-Their stored template and rendered-event rows remain readable, but new events
-are rendered only by the producer's direct `firebase_android` template. This
-prevents an installation upgraded in place from delivering every new event to
-both the retired relay template and the direct Firebase transport.
+The database migration removes templates with kind `mobile_push`, their
+bindings, and delivery snapshots with kind `rendered_mobile_push`.
+Notification drops outstanding deliveries in the retired format. Existing
+`firebase_android` templates and events remain available.
