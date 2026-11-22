@@ -957,6 +957,8 @@ class Event(
         return rendered_events
 
     def get_templates(self):
+        selected = {}
+        push_contents = (FirebaseAndroidContent, NotificationRelayContent)
         if isinstance(self.exchange, UserExchange):
             bindings = Binding.objects.get_all(
                 filters={
@@ -970,7 +972,15 @@ class Event(
                 for binding in bindings
                 if not isinstance(binding.template.content, LegacyMobilePushContent)
             }
-            if selected:
+            has_retired_push = any(
+                isinstance(binding.template.content, LegacyMobilePushContent)
+                for binding in bindings
+            )
+            has_current_push = any(
+                isinstance(template.content, push_contents)
+                for template in selected.values()
+            )
+            if selected and (not has_retired_push or has_current_push):
                 return list(selected.values())
         defaults = Template.objects.get_all(
             filters={
@@ -978,6 +988,12 @@ class Event(
                 "is_default": filters.EQ(True),
             }
         )
+        if selected:
+            return list(selected.values()) + [
+                template
+                for template in defaults
+                if isinstance(template.content, push_contents)
+            ]
         return [
             template
             for template in defaults
