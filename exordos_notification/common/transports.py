@@ -16,13 +16,19 @@
 
 import datetime
 import functools
+import json
 import math
+import uuid
 from email import utils as email_utils
+from urllib import parse as urlparse
 
+import bazooka
+from gcl_sdk.clients.http import base as http_client
 from google.auth.transport import requests as google_requests
 from google.oauth2 import service_account
 
 FIREBASE_CREDENTIALS_FILE = "/etc/exordos_notification/firebase-service-account.json"
+RELAY_CREDENTIALS_FILE = "/etc/exordos_notification/workspace-mesh-upstream.json"
 FIREBASE_SCOPE = "https://www.googleapis.com/auth/firebase.messaging"
 
 
@@ -35,6 +41,74 @@ class DeliveryError(RuntimeError):
         self.errors = list(errors)
         self.permanent = permanent
         self.retry_after = retry_after
+
+
+class DeliveryPending(RuntimeError):
+    """An upstream Notification has accepted the event and is still processing it."""
+
+
+class RelayHttpSession(bazooka.Client.SESSION):
+    def _sanitize_body(self, body):
+        return "[REDACTED]"
+
+    @staticmethod
+    def _response_body_for_log(response):
+        return "[REDACTED]"
+
+
+class RelayHttpClient(bazooka.Client):
+    SESSION = RelayHttpSession
+
+    def request(self, method, url, **kwargs):
+        kwargs["allow_redirects"] = False
+        response = super().request(method, url, **kwargs)
+        if 300 <= response.status_code < 400:
+            raise DeliveryError("relay_redirect", permanent=True)
+        return response
+
+
+def _https_endpoint(url):
+    target = urlparse.urlsplit(url)
+    if (
+        target.scheme != "https"
+        or not target.hostname
+        or target.username is not None
+        or target.query
+        or target.fragment
+    ):
+        raise ValueError("Invalid relay HTTPS endpoint")
+    return url.rstrip("/")
+
+
+@functools.lru_cache(maxsize=1)
+def relay_destination():
+    """Read the Core-managed connection once per delivery worker."""
+    try:
+        with open(RELAY_CREDENTIALS_FILE) as stream:
+            config = json.load(stream)
+        endpoint = _https_endpoint(config["notification_endpoint"])
+        iam_endpoint = _https_endpoint(config["iam_endpoint"])
+        event_type = str(uuid.UUID(config["event_type_uuid"]))
+        project = str(uuid.UUID(config["project_uuid"]))
+        access_token = config.get("access_token")
+        refresh_token = config.get("refresh_token")
+        client = RelayHttpClient(default_timeout=10)
+        auth = http_client.CoreIamAuthenticator(
+            base_url=iam_endpoint,
+            access_token=access_token,
+            refresh_token=refresh_token,
+            http_client=client,
+        )
+    except (OSError, KeyError, TypeError, ValueError, AttributeError):
+        raise DeliveryError("relay_configuration_error", permanent=True) from None
+    return (
+        http_client.CollectionBaseClient(
+            base_url=endpoint, http_client=client, auth=auth
+        ),
+        event_type,
+        project,
+        f"notification:{endpoint}:{event_type}",
+    )
 
 
 def retry_after_seconds(response, now=None):
