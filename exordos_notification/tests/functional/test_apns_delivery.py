@@ -3,8 +3,8 @@
 
 import datetime
 import json
-import uuid
 from unittest import mock
+import uuid
 
 import httpcore
 import pytest

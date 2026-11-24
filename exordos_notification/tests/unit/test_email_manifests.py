@@ -7,6 +7,7 @@ import jinja2
 import pytest
 import yaml
 
+
 ROOT = pathlib.Path(__file__).parents[3] / "exordos/manifests"
 
 

@@ -1,10 +1,10 @@
 # Copyright 2026 Genesis Corporation.
 # Licensed under the Apache License, Version 2.0 (the "License").
 
+import pathlib
 import runpy
-import uuid
-from pathlib import Path
 from unittest import mock
+import uuid
 
 import pytest
 import requests
@@ -147,7 +147,7 @@ def test_upgrade_removes_legacy_delivery_without_resending(
             ).insert(session=session)
             expected_templates.add(email.uuid)
         path = (
-            Path(__file__).resolve().parents[3]
+            pathlib.Path(__file__).resolve().parents[3]
             / "migrations"
             / "0003-Remove-legacy-mobile-push-rows-a01606.py"
         )

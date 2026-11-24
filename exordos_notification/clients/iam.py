@@ -2,6 +2,7 @@ import logging
 
 import bazooka
 
+
 LOG = logging.getLogger(__name__)
 
 _TOKEN_URL = "/v1/iam/clients/{client_uuid}/actions/get_token/invoke"

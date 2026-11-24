@@ -25,6 +25,7 @@ from exordos_notification.common import config
 from exordos_notification.common import log as infra_log
 from exordos_notification.services.providers import agents
 
+
 DOMAIN = "mail_agent"
 
 

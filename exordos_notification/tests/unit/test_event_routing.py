@@ -3,8 +3,8 @@
 #    not use this file except in compliance with the License.
 
 import unittest
-import uuid
 from unittest import mock
+import uuid
 
 from restalchemy.common import exceptions
 

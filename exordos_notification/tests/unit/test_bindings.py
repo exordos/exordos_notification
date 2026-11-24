@@ -4,8 +4,8 @@
 
 import types
 import unittest
-import uuid
 from unittest import mock
+import uuid
 
 from restalchemy.common import exceptions
 

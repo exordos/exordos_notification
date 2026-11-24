@@ -2,8 +2,8 @@
 # Licensed under the Apache License, Version 2.0.
 
 import json
-import uuid
 from unittest import mock
+import uuid
 
 import httpcore
 import pytest

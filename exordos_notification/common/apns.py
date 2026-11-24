@@ -11,6 +11,7 @@ import jwt
 
 from exordos_notification.common import transports
 
+
 CREDENTIALS_FILE = "/etc/exordos_notification/apns-credentials.json"
 ENDPOINTS = {
     "production": "https://api.push.apple.com",
