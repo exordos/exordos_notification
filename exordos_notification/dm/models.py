@@ -309,6 +309,8 @@ class ApnsProtocol(types_dynamic.AbstractKindModel):
 class NotificationRelayProtocol(types_dynamic.AbstractKindModel):
     KIND = "notification_relay"
 
+    transport = properties.property(types.Enum(["fcm", "apns"]), default="fcm")
+
     def send(self, content, user_context, destination):
         client, event_type, project, _ = destination
         event_id = str(content.event_uuid)
@@ -317,6 +319,21 @@ class NotificationRelayProtocol(types_dynamic.AbstractKindModel):
             try:
                 remote = client.get("/v1/events/", event_id)
             except http_exceptions.NotFoundError:
+                params = {
+                    "device_uuid": device_id,
+                    "registration_token": content.registration_token,
+                    "priority": content.priority,
+                }
+                if self.transport == "apns":
+                    params.update(
+                        payload=json.dumps(
+                            content.payload, ensure_ascii=False, separators=(",", ":")
+                        ),
+                        apns_environment=content.environment,
+                        apns_collapse_id=content.collapse_id,
+                    )
+                else:
+                    params["payload"] = content.data["payload"]
                 try:
                     client.create(
                         "/v1/events/",
@@ -325,12 +342,7 @@ class NotificationRelayProtocol(types_dynamic.AbstractKindModel):
                             "project_id": project,
                             "event_type": f"/v1/event_types/{event_type}",
                             "exchange": {"kind": "System"},
-                            "event_params": {
-                                "device_uuid": device_id,
-                                "registration_token": content.registration_token,
-                                "payload": content.data["payload"],
-                                "priority": content.priority,
-                            },
+                            "event_params": params,
                             "last_retry_at": content.expires_at.isoformat(),
                         },
                     )
@@ -436,7 +448,12 @@ class Provider(
             scope = f"firebase:{firebase[1]}"
             transport = {"firebase": firebase}
         elif isinstance(self.protocol, NotificationRelayProtocol):
-            destination = transports.relay_destination()
+            destination = transports.relay_destination(self.protocol.transport)
+            # APNs can accept the same token after the app registers again.
+            if self.protocol.transport == "apns":
+                return self.protocol.send(
+                    content=content, user_context=user_context, destination=destination
+                )
             scope = destination[3]
             transport = {"destination": destination}
         else:
