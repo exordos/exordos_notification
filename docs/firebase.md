@@ -67,10 +67,11 @@ cannot make the Notification service read an arbitrary local file. The Firebase
 project ID is read from the same credential and is not duplicated in the
 manifest.
 
-Provision the file through a private Core config resource with mode `0600`,
-targeting the Notification node. Do not commit the credential or pass it in
-command-line arguments. Restart `exordos-notification-mail-agent` after the
-file is installed or rotated; the process caches the authorized Google session.
+Store the service-account JSON in a Core Secret. Reference its value in the
+body of a Core config resource with mode `0600`, targeting only the
+Notification node. Restrict access to the secret and config to operators.
+Restart `exordos-notification-mail-agent` after the file is installed or
+rotated because the worker caches the authorized Google session.
 
 Creating the Google service account, enabling FCM HTTP v1 and granting its
 Firebase messaging role are separate installation actions. This repository does
