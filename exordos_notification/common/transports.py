@@ -29,6 +29,7 @@ from google.oauth2 import service_account
 
 FIREBASE_CREDENTIALS_FILE = "/etc/exordos_notification/firebase-service-account.json"
 RELAY_CREDENTIALS_FILE = "/etc/exordos_notification/workspace-mesh-upstream.json"
+APNS_RELAY_CREDENTIALS_FILE = "/etc/exordos_notification/apns-relay-upstream.json"
 FIREBASE_SCOPE = "https://www.googleapis.com/auth/firebase.messaging"
 
 
@@ -80,11 +81,12 @@ def _https_endpoint(url):
     return url.rstrip("/")
 
 
-@functools.lru_cache(maxsize=1)
-def relay_destination():
-    """Read the Core-managed connection once per delivery worker."""
+@functools.lru_cache(maxsize=2)
+def relay_destination(transport):
+    """Read the Core-managed connection once per transport and worker."""
+    path = APNS_RELAY_CREDENTIALS_FILE if transport == "apns" else RELAY_CREDENTIALS_FILE
     try:
-        with open(RELAY_CREDENTIALS_FILE) as stream:
+        with open(path, encoding="utf-8") as stream:
             config = json.load(stream)
         endpoint = _https_endpoint(config["notification_endpoint"])
         iam_endpoint = _https_endpoint(config["iam_endpoint"])
