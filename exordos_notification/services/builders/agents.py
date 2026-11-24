@@ -51,7 +51,7 @@ class EventBuilderAgent(basic.BasicService):
         for item in models.IncorrectStatuses.objects.get_all(
             limit=self._butch_size,
         ):
-            LOG.info("Syncing item status: %r", item)
+            LOG.info("Syncing event status: %s", item.event.uuid)
             event = item.event
             event.status = item.system_status
             event.status_description = item.system_status_description
@@ -77,7 +77,7 @@ class EventBuilderAgent(basic.BasicService):
         )
 
         for event in events + rendered_events:
-            LOG.info("Cleaning up event: %r", event)
+            LOG.info("Cleaning up event: %s", event.uuid)
             event.delete()
 
     def _iteration(self):

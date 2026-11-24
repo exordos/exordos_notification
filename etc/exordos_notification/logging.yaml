@@ -32,6 +32,10 @@ loggers:
   psycopg: {}
   bazooka:
     level: WARNING
+  httpcore:
+    level: WARNING
+  hpack:
+    level: WARNING
 
 root:
   handlers: [console]
