@@ -1,0 +1,8 @@
+[Unit]
+Description=Watch the Notification API TLS bundle
+
+[Path]
+PathChanged=/etc/nginx/notification-tls/api.pem
+
+[Install]
+WantedBy=multi-user.target

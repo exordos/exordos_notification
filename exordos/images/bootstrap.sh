@@ -88,4 +88,10 @@ sudo systemctl enable --now \
     exordos-notification-user-api \
     exordos-notification-core-agent
 
+sudo install -m 0644 "$GC_PATH/etc/nginx/notification-api.conf" /etc/nginx/sites-available/exordos-notification.conf
+sudo systemctl daemon-reload
+sudo systemctl enable exordos-notification-https.service
+sudo systemctl enable --now exordos-notification-https.path
+sudo systemctl start --no-block exordos-notification-https.service
+
 echo "Bootstrap completed successfully."
