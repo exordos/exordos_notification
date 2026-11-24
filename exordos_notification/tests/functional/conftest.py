@@ -4,6 +4,7 @@
 
 import datetime
 import ipaddress
+import json
 import os
 import pathlib
 import ssl
@@ -53,6 +54,7 @@ class TestIamDriver:
     # The JWT signature and service policies are real; only IAM introspection is local.
     key = os.urandom(32)
     redirect_post_target = None
+    refresh_response = None
 
     def get_algorithm(self, token_info):
         return algorithms.HS256(key=self.key)
@@ -141,6 +143,11 @@ def http_server(database, tmp_path_factory):
     application = app.build_wsgi_application(driver)
 
     def dispatch(environ, start_response):
+        if driver.refresh_response and environ["PATH_INFO"].endswith(
+            "/actions/get_token/invoke"
+        ):
+            start_response("200 OK", [("Content-Type", "application/json")])
+            return [json.dumps(driver.refresh_response).encode()]
         if driver.redirect_post_target and environ["REQUEST_METHOD"] == "POST":
             start_response(
                 "307 Temporary Redirect",

@@ -19,6 +19,8 @@ from email import utils as email_utils
 import functools
 import json
 import math
+import pathlib
+import tempfile
 from urllib import parse as urlparse
 import uuid
 
@@ -61,8 +63,20 @@ class RelayHttpSession(bazooka.Client.SESSION):
 class RelayHttpClient(bazooka.Client):
     SESSION = RelayHttpSession
 
+    def __init__(self, *, trust_pem=None, **kwargs):
+        super().__init__(**kwargs)
+        self._trust_file = None
+        if trust_pem:
+            # Requests expects a file. Keep it for the cached client's lifetime.
+            self._trust_dir = tempfile.TemporaryDirectory(prefix="notification-relay-")
+            trust_file = pathlib.Path(self._trust_dir.name) / "ca.pem"
+            trust_file.write_text(trust_pem, encoding="utf-8")
+            self._trust_file = str(trust_file)
+
     def request(self, method, url, **kwargs):
         kwargs["allow_redirects"] = False
+        if self._trust_file is not None:
+            kwargs["verify"] = self._trust_file
         response = super().request(method, url, **kwargs)
         if 300 <= response.status_code < 400:
             raise DeliveryError("relay_redirect", permanent=True)
@@ -95,7 +109,9 @@ def relay_destination(transport):
         project = str(uuid.UUID(config["project_uuid"]))
         access_token = config.get("access_token")
         refresh_token = config.get("refresh_token")
-        client = RelayHttpClient(default_timeout=10)
+        client = RelayHttpClient(
+            trust_pem=config.get("tls_trust_pem"), default_timeout=10
+        )
         auth = http_client.CoreIamAuthenticator(
             base_url=iam_endpoint,
             access_token=access_token,
