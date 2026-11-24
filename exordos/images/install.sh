@@ -25,6 +25,7 @@ GC_PATH="/opt/exordos_notification"
 GC_CFG_DIR=/etc/exordos_notification
 VENV_PATH="$GC_PATH/.venv"
 BOOTSTRAP_PATH="/var/lib/exordos/bootstrap/scripts"
+AGENT_CONFIG="/etc/exordos_universal_agent/exordos_universal_agent.conf"
 
 SYSTEMD_SERVICE_DIR=/etc/systemd/system/
 
@@ -34,8 +35,17 @@ sudo apt dist-upgrade -y
 sudo apt install -y \
     libev-dev \
     j2cli \
+    nginx \
     postgresql-client-18 \
     yq
+
+# The universal agent configures the optional HTTPS endpoint on this node.
+sudo install -d /etc/nginx/exordos /etc/nginx/ssl
+sudo rm -f /etc/nginx/sites-enabled/default
+if ! sudo grep -qE '^[[:blank:]]*LBCapabilityDriver([[:blank:]]*,)?[[:blank:]]*$' "$AGENT_CONFIG"; then
+    sudo sed -i '/^caps_drivers[[:blank:]]*=[[:blank:]]*$/a\    LBCapabilityDriver,' "$AGENT_CONFIG"
+    sudo grep -q '^    LBCapabilityDriver,$' "$AGENT_CONFIG"
+fi
 
 curl -LsSf https://releases.astral.sh/github/uv/releases/download/0.10.12/uv-installer.sh | sh
 source "$HOME"/.local/bin/env

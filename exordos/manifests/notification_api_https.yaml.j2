@@ -1,0 +1,161 @@
+# Copyright 2026 Genesis Corporation.
+# Licensed under the Apache License, Version 2.0.
+
+name: "notification_api_https"
+description: >-
+  Serves /api/notification/ over HTTPS on the Notification node and registers
+  notification in Core's local DNS zone. Set notification_api_tls_crt and
+  notification_api_tls_key to the PEM certificate and matching private key.
+  The certificate must cover the local name or the custom hostname set in
+  notification_api_domain. Point custom DNS at the Notification node.
+  For a CA-issued certificate, set notification_api_trust_pem to the CA
+  bundle. For a self-signed certificate, the default is the certificate itself.
+schema_version: 1
+version: "{{ version }}"
+api_version: "v1"
+
+requirements:
+  core:
+    from_version: "0.3.6"
+  exordos_notification:
+    # The matching Notification image ships nginx and the LB capability.
+    from_version: "{{ version }}"
+
+imports:
+  local_domain:
+    element: "$core"
+    kind: "resource"
+    link: "$core.dns.domains.$local_domain"
+  backend_node:
+    element: "$exordos_notification"
+    kind: "resource"
+    link: "$core.compute.nodes.$notification_cp"
+
+resources:
+  $core.vs.variables:
+    notification_api_tls_crt:
+      name: "notification_api_tls_crt"
+      project_id: "12345678-c625-4fee-81d5-f691897b8142"
+      setter:
+        kind: selector
+        selector_strategy: latest
+    notification_api_tls_key:
+      name: "notification_api_tls_key"
+      project_id: "12345678-c625-4fee-81d5-f691897b8142"
+      setter:
+        kind: selector
+        selector_strategy: latest
+    notification_api_trust_pem:
+      name: "notification_api_trust_pem"
+      project_id: "12345678-c625-4fee-81d5-f691897b8142"
+      setter:
+        kind: selector
+        selector_strategy: latest
+    notification_api_domain:
+      name: "notification_api_domain"
+      project_id: "12345678-c625-4fee-81d5-f691897b8142"
+      setter:
+        kind: selector
+        selector_strategy: latest
+
+  $core.vs.values:
+    notification_api_domain:
+      name: "Notification API domain"
+      project_id: "12345678-c625-4fee-81d5-f691897b8142"
+      variable: $core.vs.variables.$notification_api_domain:uuid
+      value: f"notification.{$notification_api_https.imports.$local_domain:name}"
+    notification_api_trust_pem:
+      name: "Notification API default trust bundle"
+      project_id: "12345678-c625-4fee-81d5-f691897b8142"
+      variable: $core.vs.variables.$notification_api_trust_pem:uuid
+      read_only: true
+      value: $core.vs.variables.$notification_api_tls_crt:value
+
+  $notification_api_https.imports.$local_domain.records:
+    notification_api_record:
+      domain: $notification_api_https.imports.$local_domain:uuid
+      project_id: "12345678-c625-4fee-81d5-f691897b8142"
+      type: "A"
+      record:
+        kind: "A"
+        name: "notification"
+        address: $notification_api_https.imports.$backend_node:default_network:ipv4
+
+  $core.secret.certificates:
+    notification_api_certificate:
+      name: "Notification API certificate"
+      email: "{{ notification_api_certificate_email | default('infra@exordos.com') }}"
+      project_id: "12345678-c625-4fee-81d5-f691897b8142"
+      method:
+        kind: manual
+      domains:
+        - $core.vs.variables.$notification_api_domain:value
+      cert: $core.vs.variables.$notification_api_tls_crt:value
+      key: $core.vs.variables.$notification_api_tls_key:value
+
+  $core.network.lb:
+    notification_api_lb:
+      name: "Notification API nginx"
+      project_id: "12345678-c625-4fee-81d5-f691897b8142"
+      type:
+        kind: external_node
+        external_node: $notification_api_https.imports.$backend_node:uuid
+
+  $core.network.lb.$notification_api_lb.backend_pools:
+    notification_api_http:
+      project_id: "12345678-c625-4fee-81d5-f691897b8142"
+      parent: $core.network.lb.$notification_api_lb:uuid
+      endpoints:
+        - kind: host
+          host: 127.0.0.1
+          port: 8080
+          weight: 1
+
+  $core.network.lb.$notification_api_lb.vhosts:
+    notification_api_https:
+      project_id: "12345678-c625-4fee-81d5-f691897b8142"
+      parent: $core.network.lb.$notification_api_lb:uuid
+      domains:
+        - $core.vs.variables.$notification_api_domain:value
+      protocol: https
+      port: 443
+      cert:
+        kind: raw
+        crt: $core.secret.certificates.$notification_api_certificate:cert
+        key: $core.secret.certificates.$notification_api_certificate:key
+
+  $core.network.lb.$notification_api_lb.vhosts.$notification_api_https.routes:
+    notification_api_route:
+      project_id: "12345678-c625-4fee-81d5-f691897b8142"
+      parent: $core.network.lb.$notification_api_lb.vhosts.$notification_api_https:uuid
+      condition:
+        kind: prefix
+        value: /api/notification/
+        allowed_ips:
+          - 0.0.0.0/0
+        actions:
+          - kind: backend
+            pool: $core.network.lb.$notification_api_lb.backend_pools.$notification_api_http:uuid
+            protocol:
+              kind: http
+        modifiers:
+          - kind: auto_header
+            headers:
+              - Host
+              - X-Forwarded-For
+              - X-Forwarded-Prefix
+          - kind: set_header
+            name: X-Forwarded-Proto
+            value: "https"
+          - kind: set_header
+            name: X-Forwarded-Port
+            value: "443"
+          - kind: rewrite_url
+            regex: "^/api/notification/(.*)"
+            replacement: "/$1"
+
+exports:
+  notification_api_domain:
+    link: "$core.vs.variables.$notification_api_domain"
+  notification_api_trust_pem:
+    link: "$core.vs.variables.$notification_api_trust_pem"
