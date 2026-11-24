@@ -67,10 +67,32 @@ cannot make the Notification service read an arbitrary local file. The Firebase
 project ID is read from the same credential and is not duplicated in the
 manifest.
 
-Provision the file through a private Core config resource with mode `0600`,
-targeting the Notification node. Do not commit the credential or pass it in
-command-line arguments. Restart `exordos-notification-mail-agent` after the
-file is installed or rotated; the process caches the authorized Google session.
+The credential is delivered separately from the Firebase provider. Install
+`notification_firebase_secret` first, then set
+`notification-firebase-service-account` in Core Secrets to the complete
+service-account JSON. Use the installation's secure operator workflow to set
+the value without placing it in a manifest, command-line argument, or log.
+
+After the secret is populated, install `notification_firebase_credentials`.
+It renders the secret into the file on the Notification node with ownership
+`root:root` and mode `0600`. A change restarts
+`exordos-notification-mail-agent.service`, which caches the authorized Google
+session. Restrict read access to the Core Secret and the generated Core config
+to the operators who manage the credential.
+
+When migrating an installation, seed the Core Secret with the current
+service-account JSON. If an unmanaged Core config already targets the same
+path and node, reuse its UUID. Add it as `uuid` under
+`resources.$core.config.configs.service_account` in a local copy of the
+rendered credentials manifest and install that copy. Core enforces one
+config per path and target. For a config already owned by an element,
+add the secret import to that element and update its existing config
+resource to reference the secret.
+
+Verify that Core reports the config as active, the file matches the original
+and the delivery worker is running. Verify the match without exposing either
+credential value. For key rotation, update the Core Secret and check that
+the file and worker have picked up the change.
 
 Creating the Google service account, enabling FCM HTTP v1 and granting its
 Firebase messaging role are separate installation actions. This repository does

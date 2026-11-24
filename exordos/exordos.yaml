@@ -36,6 +36,8 @@ build:
   elements:
     - manifest: manifests/notification_email.yaml.j2
     - manifest: manifests/notification_firebase.yaml.j2
+    - manifest: manifests/notification_firebase_secret.yaml.j2
+    - manifest: manifests/notification_firebase_credentials.yaml.j2
     - manifest: manifests/notification_pg_backup.yaml.j2
     - manifest: manifests/notification_pg_restore.yaml.j2
 
