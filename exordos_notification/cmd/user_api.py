@@ -19,7 +19,8 @@ import sys
 
 from gcl_iam import drivers
 from gcl_iam import opts as iam_opts
-from gcl_looper.services import bjoern_service, hub
+from gcl_looper.services import bjoern_service
+from gcl_looper.services import hub
 from oslo_config import cfg
 from restalchemy.common import config_opts as ra_config_opts
 from restalchemy.storage.sql import engines
@@ -27,6 +28,7 @@ from restalchemy.storage.sql import engines
 from exordos_notification.common import config
 from exordos_notification.common import log as infra_log
 from exordos_notification.user_api.api import app
+
 
 api_cli_opts = [
     cfg.StrOpt(

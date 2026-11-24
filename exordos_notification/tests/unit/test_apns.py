@@ -1,16 +1,17 @@
 import datetime
 import json
 import time
-import uuid
 from unittest import mock
+import uuid
 
+from cryptography.hazmat.primitives import serialization
+from cryptography.hazmat.primitives.asymmetric import ec
 import httpcore
 import jwt
 import pytest
-from cryptography.hazmat.primitives import serialization
-from cryptography.hazmat.primitives.asymmetric import ec
 
-from exordos_notification.common import apns, transports
+from exordos_notification.common import apns
+from exordos_notification.common import transports
 from exordos_notification.dm import models
 
 

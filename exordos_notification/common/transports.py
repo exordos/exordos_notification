@@ -15,17 +15,18 @@
 #    under the License.
 
 import datetime
+from email import utils as email_utils
 import functools
 import json
 import math
-import uuid
-from email import utils as email_utils
 from urllib import parse as urlparse
+import uuid
 
 import bazooka
 from gcl_sdk.clients.http import base as http_client
 from google.auth.transport import requests as google_requests
 from google.oauth2 import service_account
+
 
 FIREBASE_CREDENTIALS_FILE = "/etc/exordos_notification/firebase-service-account.json"
 RELAY_CREDENTIALS_FILE = "/etc/exordos_notification/workspace-mesh-upstream.json"

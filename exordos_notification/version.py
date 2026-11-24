@@ -14,11 +14,12 @@
 #    License for the specific language governing permissions and limitations
 #    under the License.
 
-from importlib.metadata import version
+from importlib import metadata
 
 from exordos_notification.common import constants as c
 
-version_info = version(c.GLOBAL_SERVICE_NAME)
+
+version_info = metadata.version(c.GLOBAL_SERVICE_NAME)
 
 
 if __name__ == "__main__":

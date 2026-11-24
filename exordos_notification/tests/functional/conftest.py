@@ -12,15 +12,17 @@ import time
 import uuid
 import wsgiref.simple_server
 
+from cryptography import x509
+from cryptography.hazmat.primitives import hashes
+from cryptography.hazmat.primitives import serialization
+from cryptography.hazmat.primitives.asymmetric import ec
+from cryptography.x509 import oid
+from gcl_iam import algorithms
 import jwt
 import psycopg
 import pytest
-from cryptography import x509
-from cryptography.hazmat.primitives import hashes, serialization
-from cryptography.hazmat.primitives.asymmetric import ec
-from cryptography.x509.oid import NameOID
-from gcl_iam import algorithms
-from restalchemy.storage.sql import engines, migrations
+from restalchemy.storage.sql import engines
+from restalchemy.storage.sql import migrations
 
 from exordos_notification.user_api.api import app
 
@@ -99,7 +101,7 @@ def http_server(database, tmp_path_factory):
     # Exercise the authenticated WSGI API with TLS certificate verification.
     tls_dir = tmp_path_factory.mktemp("notification-tls")
     private_key = ec.generate_private_key(ec.SECP256R1())
-    subject = x509.Name([x509.NameAttribute(NameOID.COMMON_NAME, "localhost")])
+    subject = x509.Name([x509.NameAttribute(oid.NameOID.COMMON_NAME, "localhost")])
     now = datetime.datetime.now(datetime.timezone.utc)
     certificate = (
         x509.CertificateBuilder()

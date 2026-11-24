@@ -3,14 +3,14 @@
 
 import datetime
 import json
-import uuid
 from unittest import mock
+import uuid
 
-import pytest
-import requests
 from google.auth import exceptions as google_auth_exceptions
 from google.auth.transport import requests as google_requests
 from google.oauth2 import service_account
+import pytest
+import requests
 from restalchemy.common import exceptions
 
 from exordos_notification.common import transports

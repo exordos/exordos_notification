@@ -23,6 +23,7 @@ from restalchemy.dm import filters
 
 from exordos_notification.dm import models
 
+
 LOG = logging.getLogger(__name__)
 
 

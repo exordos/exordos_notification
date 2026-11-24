@@ -15,34 +15,35 @@
 #    under the License.
 
 import datetime
+from email.mime import multipart
+from email.mime import text
 import hashlib
 import json
 import logging
 import smtplib
 import ssl
 import uuid as sys_uuid
-from email.mime import multipart, text
 
-import jinja2
-import requests
-import zulip
 from bazooka import exceptions as http_exceptions
 from gcl_sdk.agents.universal.dm import models as ua_models
 from google.auth import exceptions as google_auth_exceptions
+import jinja2
 from psycopg.types import json as sql_json
+import requests
 from restalchemy.common import exceptions
-from restalchemy.dm import (
-    filters,
-    models,
-    properties,
-    relationships,
-    types,
-    types_dynamic,
-)
+from restalchemy.dm import filters
+from restalchemy.dm import models
+from restalchemy.dm import properties
+from restalchemy.dm import relationships
+from restalchemy.dm import types
+from restalchemy.dm import types_dynamic
 from restalchemy.storage.sql import orm
+import zulip
 
-from exordos_notification.common import apns, transports
+from exordos_notification.common import apns
 from exordos_notification.common import constants as c
+from exordos_notification.common import transports
+
 
 LOG = logging.getLogger(__name__)
 

@@ -26,6 +26,7 @@ from exordos_notification.common import config
 from exordos_notification.common import log as infra_log
 from exordos_notification.services.builders import agents
 
+
 DOMAIN = "builder_agent"
 DOMAIN_IAM_CLIENT = "iam_client"
 

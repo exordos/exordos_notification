@@ -21,6 +21,7 @@ from oslo_config import cfg
 from exordos_notification import version
 from exordos_notification.common import constants
 
+
 LOG = logging.getLogger(__name__)
 
 GLOBAL_SERVICE_NAME = constants.GLOBAL_SERVICE_NAME
