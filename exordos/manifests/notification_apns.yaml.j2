@@ -1,0 +1,55 @@
+# Apple Push Notification service transport for Exordos Workspace.
+name: "notification_apns"
+description: "APNs transport for Exordos Workspace"
+schema_version: 1
+version: "{{ version }}"
+api_version: "v1"
+
+requirements:
+  exordos_notification:
+    from_version: "2.0.4-dev"
+
+imports:
+  notification_node:
+    element: "$exordos_notification"
+    kind: resource
+    link: "$core.compute.nodes.$notification_cp"
+
+resources:
+  $exordos_notification.types.email.providers:
+    apns:
+      project_id: "12345678-c625-4fee-81d5-f691897b8142"
+      name: "apns"
+      description: "Apple Push Notification service for Exordos Workspace"
+      protocol:
+        kind: "apns"
+        topic: "com.exordos.workspace"
+
+  $core.secret.secrets:
+    apns_credentials:
+      name: notification-apns-credentials
+      project_id: "12345678-c625-4fee-81d5-f691897b8142"
+      constructor:
+        kind: plain
+
+  $core.config.configs:
+    apns_credentials:
+      name: notification-apns-credentials-file
+      project_id: "12345678-c625-4fee-81d5-f691897b8142"
+      path: /etc/exordos_notification/apns-credentials.json
+      owner: root
+      group: root
+      mode: "0600"
+      target:
+        kind: node
+        node: $notification_apns.imports.$notification_node:uuid
+      body:
+        kind: text
+        content: $core.secret.secrets.$apns_credentials:value
+      on_change:
+        kind: shell
+        command: systemctl try-restart exordos-notification-mail-agent.service
+
+exports:
+  apns_provider:
+    link: "$exordos_notification.types.email.providers.$apns"

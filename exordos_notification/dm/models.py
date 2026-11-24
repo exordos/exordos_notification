@@ -41,8 +41,8 @@ from restalchemy.dm import (
 )
 from restalchemy.storage.sql import orm
 
+from exordos_notification.common import apns, transports
 from exordos_notification.common import constants as c
-from exordos_notification.common import transports
 
 LOG = logging.getLogger(__name__)
 
@@ -295,6 +295,17 @@ class FirebaseProtocol(types_dynamic.AbstractKindModel):
         )
 
 
+class ApnsProtocol(types_dynamic.AbstractKindModel):
+    KIND = "apns"
+
+    topic = properties.property(
+        types.String(min_length=1, max_length=255), required=True
+    )
+
+    def send(self, content, user_context):
+        apns.send(self.topic, content)
+
+
 class NotificationRelayProtocol(types_dynamic.AbstractKindModel):
     KIND = "notification_relay"
 
@@ -412,6 +423,7 @@ class Provider(
             types_dynamic.KindModelType(StartTlsSmtpProtocol),
             types_dynamic.KindModelType(ZulipProtocol),
             types_dynamic.KindModelType(FirebaseProtocol),
+            types_dynamic.KindModelType(ApnsProtocol),
             types_dynamic.KindModelType(NotificationRelayProtocol),
         ),
         required=True,
@@ -648,6 +660,41 @@ class FirebaseAndroidContent(AbstractContent):
         )
 
 
+class RenderedApnsContent(AbstractContent):
+    KIND = "rendered_apns"
+    requires_user_context = False
+
+    device_uuid = properties.property(types.UUID(), required=True)
+    event_uuid = properties.property(types.UUID(), required=True)
+    expires_at = properties.property(types.UTCDateTimeZ(), required=True)
+    registration_token = properties.property(
+        types.String(min_length=1, max_length=4096), required=True
+    )
+    payload = properties.property(types.Dict(), required=True)
+    environment = properties.property(types.Enum(list(apns.ENDPOINTS)), required=True)
+    collapse_id = properties.property(
+        types.String(min_length=64, max_length=64), required=True
+    )
+    priority = properties.property(types.Enum(["normal", "high"]), default="normal")
+
+
+class ApnsContent(AbstractContent):
+    KIND = "apns"
+    requires_user_context = False
+
+    def render(self, params, *, event):
+        return RenderedApnsContent(
+            device_uuid=sys_uuid.UUID(params["device_uuid"]),
+            event_uuid=event.uuid,
+            expires_at=event.last_retry_at,
+            registration_token=params["registration_token"],
+            payload=json.loads(params["payload"]),
+            environment=params["apns_environment"],
+            collapse_id=params["apns_collapse_id"],
+            priority=params["priority"],
+        )
+
+
 class RenderedNotificationRelayContent(RenderedFirebaseAndroidContent):
     KIND = "rendered_notification_relay"
 
@@ -687,6 +734,7 @@ class Template(
             types_dynamic.KindModelType(ZulipStreamMessageContent),
             types_dynamic.KindModelType(ZulipDirectMessageContent),
             types_dynamic.KindModelType(FirebaseAndroidContent),
+            types_dynamic.KindModelType(ApnsContent),
             types_dynamic.KindModelType(NotificationRelayContent),
         ),
         required=True,
@@ -894,7 +942,7 @@ class Event(
             params.update(self.event_params)
             render_options = (
                 {"event": self}
-                if isinstance(template.content, NotificationRelayContent)
+                if isinstance(template.content, (NotificationRelayContent, ApnsContent))
                 else {}
             )
             rendered_content = template.content.render(params, **render_options)
@@ -946,6 +994,7 @@ class RenderedEvent(
             types_dynamic.KindModelType(RenderedStreamMessageContent),
             types_dynamic.KindModelType(RenderedDirectMessageContent),
             types_dynamic.KindModelType(RenderedFirebaseAndroidContent),
+            types_dynamic.KindModelType(RenderedApnsContent),
             types_dynamic.KindModelType(RenderedNotificationRelayContent),
         ),
         required=True,
