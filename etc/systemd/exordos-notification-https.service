@@ -1,0 +1,9 @@
+[Unit]
+Description=Configure HTTPS for the Notification API
+
+[Service]
+Type=oneshot
+ExecStart=/usr/local/sbin/exordos-notification-https
+
+[Install]
+WantedBy=multi-user.target

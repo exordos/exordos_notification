@@ -34,8 +34,13 @@ sudo apt dist-upgrade -y
 sudo apt install -y \
     libev-dev \
     j2cli \
+    nginx \
     postgresql-client-18 \
     yq
+
+sudo install -d -m 0700 /etc/nginx/notification-tls
+sudo rm -f /etc/nginx/sites-enabled/default
+sudo systemctl disable --now nginx.service
 
 curl -LsSf https://releases.astral.sh/github/uv/releases/download/0.10.12/uv-installer.sh | sh
 source "$HOME"/.local/bin/env
@@ -47,6 +52,7 @@ sudo cp "$GC_PATH/etc/exordos_notification/exordos_notification.conf.j2" $GC_CFG
 sudo cp "$GC_PATH/etc/exordos_notification/core_agent.conf.j2" $GC_CFG_DIR/
 sudo cp "$GC_PATH/etc/exordos_notification/logging.yaml" $GC_CFG_DIR/
 sudo cp "$GC_PATH/exordos/images/bootstrap.sh" $BOOTSTRAP_PATH/0100-notification-bootstrap.sh
+sudo install -m 0755 "$GC_PATH/exordos/images/configure-https.sh" /usr/local/sbin/exordos-notification-https
 
 cd "$GC_PATH"
 uv sync
@@ -62,6 +68,8 @@ sudo cp "$GC_PATH/etc/systemd/exordos-notification-mail-agent.service" $SYSTEMD_
 sudo cp "$GC_PATH/etc/systemd/exordos-notification-builder-agent.service" $SYSTEMD_SERVICE_DIR
 sudo cp "$GC_PATH/etc/systemd/exordos-notification-user-api.service" $SYSTEMD_SERVICE_DIR
 sudo cp "$GC_PATH/etc/systemd/exordos-notification-core-agent.service" $SYSTEMD_SERVICE_DIR
+sudo cp "$GC_PATH/etc/systemd/exordos-notification-https.service" $SYSTEMD_SERVICE_DIR
+sudo cp "$GC_PATH/etc/systemd/exordos-notification-https.path" $SYSTEMD_SERVICE_DIR
 
 
 cat <<EOT | sudo tee /etc/motd

@@ -1,0 +1,99 @@
+# Copyright 2026 Genesis Corporation.
+# Licensed under the Apache License, Version 2.0.
+
+name: "notification_api_https"
+description: Serve the Notification API over HTTPS with local DNS
+schema_version: 1
+version: "{{ version }}"
+api_version: "v1"
+
+requirements:
+  core:
+    from_version: "0.3.6"
+  exordos_notification:
+    # The matching Notification image configures nginx during bootstrap.
+    from_version: "{{ version }}"
+
+imports:
+  local_domain:
+    element: "$core"
+    kind: "resource"
+    link: "$core.dns.domains.$local_domain"
+  backend_node:
+    element: "$exordos_notification"
+    kind: "resource"
+    link: "$core.compute.nodes.$notification_cp"
+
+resources:
+  $core.vs.variables:
+    notification_api_tls_crt:
+      name: "notification_api_tls_crt"
+      project_id: "12345678-c625-4fee-81d5-f691897b8142"
+      setter:
+        kind: selector
+        selector_strategy: latest
+    notification_api_tls_key:
+      name: "notification_api_tls_key"
+      project_id: "12345678-c625-4fee-81d5-f691897b8142"
+      setter:
+        kind: selector
+        selector_strategy: latest
+    notification_api_trust_pem:
+      name: "notification_api_trust_pem"
+      project_id: "12345678-c625-4fee-81d5-f691897b8142"
+      setter:
+        kind: selector
+        selector_strategy: latest
+    notification_api_domain:
+      name: "notification_api_domain"
+      project_id: "12345678-c625-4fee-81d5-f691897b8142"
+      setter:
+        kind: selector
+        selector_strategy: latest
+
+  $core.vs.values:
+    notification_api_domain:
+      name: "Notification API domain"
+      project_id: "12345678-c625-4fee-81d5-f691897b8142"
+      variable: $core.vs.variables.$notification_api_domain:uuid
+      value: f"notification.{$notification_api_https.imports.$local_domain:name}"
+    notification_api_trust_pem:
+      name: "Notification API default trust bundle"
+      project_id: "12345678-c625-4fee-81d5-f691897b8142"
+      variable: $core.vs.variables.$notification_api_trust_pem:uuid
+      read_only: true
+      value: $core.vs.variables.$notification_api_tls_crt:value
+
+  $notification_api_https.imports.$local_domain.records:
+    notification_api_record:
+      domain: $notification_api_https.imports.$local_domain:uuid
+      project_id: "12345678-c625-4fee-81d5-f691897b8142"
+      type: "A"
+      record:
+        kind: "A"
+        name: "notification"
+        address: $notification_api_https.imports.$backend_node:default_network:ipv4
+
+  $core.config.configs:
+    notification_api_tls_bundle:
+      project_id: "12345678-c625-4fee-81d5-f691897b8142"
+      path: /etc/nginx/notification-tls/api.pem
+      owner: root
+      group: root
+      mode: "0600"
+      target:
+        kind: node
+        node: $notification_api_https.imports.$backend_node:uuid
+      body:
+        kind: text
+        content: |
+          f"
+          {$core.vs.variables.$notification_api_tls_crt:value}
+          {$core.vs.variables.$notification_api_tls_key:value}
+          "
+
+exports:
+  notification_api_domain:
+    link: "$core.vs.variables.$notification_api_domain"
+  notification_api_trust_pem:
+    link: "$core.vs.variables.$notification_api_trust_pem"
