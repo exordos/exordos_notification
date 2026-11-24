@@ -2,6 +2,8 @@
 # Licensed under the Apache License, Version 2.0.
 
 import json
+import os
+import pathlib
 from unittest import mock
 import uuid
 
@@ -36,17 +38,28 @@ def test_relay_forwards_once_and_follows_upstream_status(
         ]
     )
     config_path = tmp_path / "upstream.json"
-    config_path.write_text(
-        json.dumps(
+    config = {
+        "notification_endpoint": endpoint,
+        "iam_endpoint": endpoint,
+        "event_type_uuid": str(receiver.uuid),
+        "project_uuid": str(project),
+        "access_token": headers["Authorization"].removeprefix("Bearer "),
+    }
+    if transport == "apns":
+        test_ca = pathlib.Path(os.environ["REQUESTS_CA_BUNDLE"])
+        config["tls_trust_pem"] = test_ca.read_text()
+        config["refresh_token"] = "synthetic-refresh"
+        monkeypatch.setattr(
+            iam,
+            "refresh_response",
             {
-                "notification_endpoint": endpoint,
-                "iam_endpoint": endpoint,
-                "event_type_uuid": str(receiver.uuid),
-                "project_uuid": str(project),
-                "access_token": headers["Authorization"].removeprefix("Bearer "),
-            }
+                "access_token": config.pop("access_token"),
+                "refresh_token": "synthetic-renewed-refresh",
+            },
         )
-    )
+        monkeypatch.delenv("REQUESTS_CA_BUNDLE")
+        monkeypatch.delenv("CURL_CA_BUNDLE", raising=False)
+    config_path.write_text(json.dumps(config))
     credentials = "RELAY_CREDENTIALS_FILE"
     template_content = models.NotificationRelayContent()
     protocol = models.NotificationRelayProtocol()
