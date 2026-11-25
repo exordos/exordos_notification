@@ -21,4 +21,6 @@ jobs:
       version: ${{ needs.Build.outputs.version }}
       dependencies: metapaas dbaas mailaas
       overbook: true
+      realm-cores: 8
+      realm-ram: 16384
     secrets: inherit

@@ -86,7 +86,7 @@ class SimpleSmtpProtocol(types_dynamic.AbstractKindModel):
     def _build_message(self, content, user_context):
         msg = multipart.MIMEMultipart("alternative")
         msg["From"] = self.noreply_email_address
-        msg["To"] = user_context["user"]["email"]
+        msg["To"] = content.recipient or user_context["user"]["email"]
         msg["Subject"] = content.title
         for body in content.bodies:
             msg.attach(text.MIMEText(body, "html", "utf-8"))
@@ -101,7 +101,7 @@ class SimpleSmtpProtocol(types_dynamic.AbstractKindModel):
             smtp = self._authenticate(smtp)
             return smtp.sendmail(
                 from_addr=self.noreply_email_address,
-                to_addrs=user_context["user"]["email"],
+                to_addrs=content.recipient or user_context["user"]["email"],
                 msg=msg.as_string(),
             )
 
@@ -512,6 +512,11 @@ class AbstractContent(types_dynamic.AbstractKindModel):
 class RenderedEmailContent(AbstractContent):
     KIND = "rendered_email"
 
+    recipient = properties.property(
+        types.AllowNone(types.Email()),
+        default=None,
+    )
+
     title = properties.property(
         types.String(max_length=256),
         default="",
@@ -525,8 +530,22 @@ class RenderedEmailContent(AbstractContent):
 class EmailContent(RenderedEmailContent):
     KIND = "email"
 
+    # Only template authors can opt into an explicit recipient. Event parameters
+    # alone must never override the exchange's delivery address.
+    recipient = properties.property(
+        types.AllowNone(types.String(max_length=256)),
+        default=None,
+    )
+
     def render(self, params):
         return RenderedEmailContent(
+            recipient=(
+                jinja2.Template(
+                    self.recipient, undefined=jinja2.StrictUndefined
+                ).render(**params)
+                if self.recipient is not None
+                else None
+            ),
             title=jinja2.Template(self.title).render(**params),
             bodies=[jinja2.Template(body).render(**params) for body in self.bodies],
         )
