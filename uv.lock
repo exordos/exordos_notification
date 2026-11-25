@@ -1,5 +1,5 @@
 version = 1
-revision = 3
+revision = 5
 requires-python = ">=3.10"
 resolution-markers = [
     "python_full_version >= '3.15'",
@@ -562,7 +562,7 @@ name = "exceptiongroup"
 version = "1.3.1"
 source = { registry = "https://pypi.org/simple" }
 dependencies = [
-    { name = "typing-extensions", marker = "python_full_version < '3.13'" },
+    { name = "typing-extensions" },
 ]
 sdist = { url = "https://files.pythonhosted.org/packages/50/79/66800aadf48771f6b62f7eb014e352e5d06856655206165d775e675a02c9/exceptiongroup-1.3.1.tar.gz", hash = "sha256:8b412432c6055b0b7d14c310000ae93352ed6754f70fa8f7c34141f91c4e3219", size = 30371, upload-time = "2025-11-21T23:01:54.787Z" }
 wheels = [
@@ -663,21 +663,21 @@ wheels = [
 
 [[package]]
 name = "gcl-looper"
-version = "1.3.0"
+version = "1.3.1"
 source = { registry = "https://pypi.org/simple" }
 dependencies = [
     { name = "importlib-metadata" },
     { name = "oslo-config" },
     { name = "setuptools" },
 ]
-sdist = { url = "https://files.pythonhosted.org/packages/32/79/8061fe15bdb1d10f5e60fc1d781fec31533c8fc7c2253b256fdfad9c49b0/gcl_looper-1.3.0.tar.gz", hash = "sha256:45fdd0837067c45d9e85c8bcf5482cc6f0535b39995ae35920e371c7e79bd660", size = 148756, upload-time = "2026-09-04T09:08:46.753Z" }
+sdist = { url = "https://files.pythonhosted.org/packages/b0/be/ad9c33817b1eaddb73c29782d092e965d52e54e7ef1b57b896e0117c3b84/gcl_looper-1.3.1.tar.gz", hash = "sha256:422d43a6f39f49f3afab80fdbac6ea08038051baacc27052f563e5a9658b87af", size = 172085, upload-time = "2026-11-21T10:36:22.03Z" }
 wheels = [
-    { url = "https://files.pythonhosted.org/packages/02/a2/8598d05e07cdbe6859c1e21dde080cce5b078df05c80aa9835fbc53de6fc/gcl_looper-1.3.0-py3-none-any.whl", hash = "sha256:8a223d75ba44eecb03760ce3eb7211dce45f411d6aceb47855bce4413c6cae36", size = 41869, upload-time = "2026-09-04T09:08:45.293Z" },
+    { url = "https://files.pythonhosted.org/packages/0b/8b/d92bc2098435a43b495380a56a3b428b09156a6f2ae1afd5a2046cad671b/gcl_looper-1.3.1-py3-none-any.whl", hash = "sha256:c14809e3a6768740d4e894d21cab31effd0a9b360bdb692965b50c204d8ead00", size = 68370, upload-time = "2026-11-21T10:36:20.739Z" },
 ]
 
 [[package]]
 name = "gcl-sdk"
-version = "3.7.5"
+version = "3.8.1"
 source = { registry = "https://pypi.org/simple" }
 dependencies = [
     { name = "bjoern" },
@@ -692,9 +692,9 @@ dependencies = [
     { name = "restalchemy" },
     { name = "xxhash" },
 ]
-sdist = { url = "https://files.pythonhosted.org/packages/60/96/d98936a1292b11729aa0400908558e7e855ce2f1403b1396b2b037e69e47/gcl_sdk-3.7.5.tar.gz", hash = "sha256:520a052cbf7abcbbe0df64d10794fd61c1a6255fc8b09d6843198b6aee4e8b14", size = 410787, upload-time = "2026-10-28T19:52:55.117Z" }
+sdist = { url = "https://files.pythonhosted.org/packages/c8/49/2f3ad4f98ac9f3064389b6fde6f0e0c1f3012c1345a646baca8e6a18df4e/gcl_sdk-3.8.1.tar.gz", hash = "sha256:f28c5e4ffe19239b0ebbd1b2aecb20f53ed8926f55579bf75fd52519ff7b2499", size = 462015, upload-time = "2026-11-20T16:22:48Z" }
 wheels = [
-    { url = "https://files.pythonhosted.org/packages/22/b7/49a8ba078aa541a48665b429da0ce3ee8037f1c45e2878f94c94b1a2b7f7/gcl_sdk-3.7.5-py3-none-any.whl", hash = "sha256:b3cb85ea9559276319545d41b07c4c314616f170e789b649ea8fd777a26aac22", size = 365822, upload-time = "2026-10-28T19:52:53.446Z" },
+    { url = "https://files.pythonhosted.org/packages/c7/f4/7c07c4b94bdc2653b6ab06ac8d7fac58505687e4c055d578b77ace58d3a6/gcl_sdk-3.8.1-py3-none-any.whl", hash = "sha256:dbdc8d5901a37990d8dafe8f4cff3e8d6412fc3ca1ecbf7de193fe0aa126a655", size = 429920, upload-time = "2026-11-20T16:22:46.367Z" },
 ]
 
 [[package]]
