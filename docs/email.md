@@ -55,19 +55,3 @@ authenticated Notification POST/GET and SMTP. Trigger a renewal on a short-lived
 test token and verify config replacement, sender restart, an unchanged user API
 process, and successful sending with the replacement token. API acceptance alone
 does not prove inbox delivery.
-
-## Explicit email recipients
-
-Email templates may set `content.recipient` to an address or a Jinja expression,
-for example `"{{ recipient }}"`. The rendered value must be a valid email address.
-It is persisted in `RenderedEmailContent` and used for both the SMTP envelope and
-`To` header, even if the user's email changes before delivery. A missing template
-variable or invalid address fails rendering; it does not fall back to the user's
-current address.
-
-Only trusted template authors should enable this field. Event parameters alone
-cannot override the recipient of a template that does not opt in. Existing
-templates with no recipient continue to use the user exchange's email address.
-Core's email-change flow needs this capability for confirmation at the new
-address and notification at the previous one. Deploy this change before Core's
-updated `core_notification_email` template.
