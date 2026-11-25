@@ -21,4 +21,5 @@ jobs:
       version: ${{ needs.Build.outputs.version }}
       dependencies: metapaas dbaas mailaas
       overbook: true
+      keep-realm: true
     secrets: inherit
