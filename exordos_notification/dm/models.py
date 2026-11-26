@@ -1140,15 +1140,16 @@ class UnprocessedEvent(
         required=True,
     )
 
-    def process_event(self, iam_client):
+    def process_event(self, iam_client) -> int | None:
         try:
             rendered_events = self.event.render(iam_client)
         except Exception as e:
             LOG.exception("Failed to render event")
             self.event.set_error_status(e)
-            return
+            return None
         for rendered_event in rendered_events:
             rendered_event.insert()
+        return len(rendered_events)
 
 
 class IncorrectStatuses(

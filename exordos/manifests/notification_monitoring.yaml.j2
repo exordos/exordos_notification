@@ -1,0 +1,228 @@
+name: "notification_monitoring"
+description: "Collect Notification service metrics and install its Grafana dashboard"
+schema_version: 1
+version: "{{ version }}"
+api_version: "v1"
+
+requirements:
+  core:
+    from_version: "0.0.0"
+  exordos_notification:
+    from_version: "{{ version }}"
+  grafanaaas:
+    from_version: "0.0.0"
+  observability:
+    from_version: "0.1.3"
+
+imports:
+  backend_node:
+    element: "$exordos_notification"
+    kind: "resource"
+    link: "$core.compute.nodes.$notification_cp"
+  grafana_instance:
+    element: "$observability"
+    kind: "resource"
+    link: "$grafanaaas.types.grafana.instances.$grafana"
+
+resources:
+  $core.config.configs:
+    notification_metrics_enabled:
+      project_id: "12345678-c625-4fee-81d5-f691897b8142"
+      path: /etc/exordos_notification/monitoring.enabled
+      target:
+        kind: node
+        node: $notification_monitoring.imports.$backend_node:uuid
+      body:
+        kind: text
+        content: "enabled"
+      on_change:
+        kind: shell
+        command: >-
+          flock -w 15 /var/lib/exordos/node_exporter/notification.lock
+          systemctl enable --now exordos-notification-metrics.timer
+
+  $grafanaaas.types.grafana.dashboards:
+    notification_service:
+      name: "notification-service"
+      project_id: "12345678-c625-4fee-81d5-f691897b8142"
+      source:
+        kind: raw
+        content:
+          title: Notification Service
+          uid: exordos-notification-service
+          schemaVersion: 41
+          version: 1
+          refresh: 30s
+          time:
+            from: now-6h
+            to: now
+          tags: [exordos, notification]
+          panels:
+            - id: 1
+              title: API, database and queue collector
+              type: timeseries
+              gridPos: {x: 0, y: 0, w: 12, h: 7}
+              fieldConfig:
+                defaults: {min: 0, max: 1, decimals: 0}
+              targets:
+                - refId: A
+                  expr: exordos_notification_api_up
+                  legendFormat: API
+                - refId: B
+                  expr: exordos_notification_database_up
+                  legendFormat: PostgreSQL
+                - refId: C
+                  expr: exordos_notification_queue_collection_up
+                  legendFormat: Queue collector
+            - id: 2
+              title: Snapshot age
+              type: timeseries
+              gridPos: {x: 12, y: 0, w: 12, h: 7}
+              fieldConfig:
+                defaults: {unit: s, min: 0}
+              targets:
+                - refId: A
+                  expr: time() - exordos_notification_snapshot_timestamp_seconds
+            - id: 3
+              title: Service units
+              type: timeseries
+              gridPos: {x: 0, y: 7, w: 12, h: 7}
+              fieldConfig:
+                defaults: {min: 0, max: 1, decimals: 0}
+              targets:
+                - refId: A
+                  expr: exordos_notification_unit_up
+                  legendFormat: '{{ "{{unit}}" }}'
+            - id: 4
+              title: Automatic restarts per hour
+              type: timeseries
+              gridPos: {x: 12, y: 7, w: 12, h: 7}
+              fieldConfig:
+                defaults: {min: 0}
+              targets:
+                - refId: A
+                  expr: increase(exordos_notification_unit_restarts_total[1h])
+                  legendFormat: '{{ "{{unit}}" }}'
+            - id: 5
+              title: Events waiting for processing
+              description: Ready items are eligible now. Scheduled items are waiting for backoff.
+              type: timeseries
+              gridPos: {x: 0, y: 14, w: 12, h: 8}
+              fieldConfig:
+                defaults: {min: 0, decimals: 0}
+              targets:
+                - refId: A
+                  expr: exordos_notification_queue_items{state=~"ready|scheduled"}
+                  legendFormat: '{{ "{{stage}} / {{channel}} / {{state}}" }}'
+            - id: 6
+              title: How long ready events have been overdue
+              type: timeseries
+              gridPos: {x: 12, y: 14, w: 12, h: 8}
+              fieldConfig:
+                defaults: {unit: s, min: 0}
+              targets:
+                - refId: A
+                  expr: exordos_notification_queue_overdue_seconds{state="ready"}
+                  legendFormat: '{{ "{{stage}} / {{channel}}" }}'
+            - id: 7
+              title: Oldest queued event
+              type: timeseries
+              gridPos: {x: 0, y: 22, w: 12, h: 8}
+              fieldConfig:
+                defaults: {unit: s, min: 0}
+              targets:
+                - refId: A
+                  expr: exordos_notification_queue_oldest_seconds
+                  legendFormat: '{{ "{{stage}} / {{channel}} / {{state}}" }}'
+            - id: 8
+              title: Accepted and exhausted events still in storage
+              description: Current retained rows. These values drop as expired events are deleted.
+              type: timeseries
+              gridPos: {x: 12, y: 22, w: 12, h: 8}
+              fieldConfig:
+                defaults: {min: 0, decimals: 0}
+              targets:
+                - refId: A
+                  expr: exordos_notification_queue_items{state=~"accepted|expired|no_retry"}
+                  legendFormat: '{{ "{{stage}} / {{channel}} / {{state}}" }}'
+
+
+            - id: 9
+              title: Delivery attempts per minute
+              description: Pending relay checks and inactive tokens are displayed separately.
+              type: timeseries
+              gridPos: {x: 0, y: 30, w: 12, h: 8}
+              fieldConfig:
+                defaults: {min: 0}
+              targets:
+                - refId: A
+                  expr: sum by (channel, outcome) (rate(exordos_notification_delivery_attempts_total[5m])) * 60
+                  legendFormat: '{{ "{{channel}} / {{outcome}}" }}'
+            - id: 10
+              title: p95 from rendering to provider acceptance
+              description: Includes time in the delivery queue and retry delays. Relay acceptance is reported by the destination.
+              type: timeseries
+              gridPos: {x: 12, y: 30, w: 12, h: 8}
+              fieldConfig:
+                defaults: {unit: s, min: 0}
+              targets:
+                - refId: A
+                  expr: histogram_quantile(0.95, sum by (channel, le) (rate(exordos_notification_queue_to_accept_seconds_bucket[5m])))
+                  legendFormat: '{{ "{{channel}}" }}'
+            - id: 11
+              title: Time since last successful worker cycle
+              type: timeseries
+              gridPos: {x: 0, y: 38, w: 12, h: 8}
+              fieldConfig:
+                defaults: {unit: s, min: 0}
+              targets:
+                - refId: A
+                  expr: time() - exordos_notification_worker_last_success_timestamp_seconds
+                  legendFormat: '{{ "{{stage}}" }}'
+            - id: 12
+              title: Render attempts per minute
+              type: timeseries
+              gridPos: {x: 12, y: 38, w: 12, h: 8}
+              fieldConfig:
+                defaults: {min: 0}
+              targets:
+                - refId: A
+                  expr: sum by (outcome) (rate(exordos_notification_render_attempts_total[5m])) * 60
+                  legendFormat: '{{ "{{outcome}}" }}'
+
+            - id: 13
+              title: Provider or relay attempt p95
+              type: timeseries
+              gridPos: {x: 0, y: 46, w: 12, h: 8}
+              fieldConfig:
+                defaults: {unit: s, min: 0}
+              targets:
+                - refId: A
+                  expr: histogram_quantile(0.95, sum by (channel, outcome, le) (rate(exordos_notification_delivery_attempt_duration_seconds_bucket[5m])))
+                  legendFormat: '{{ "{{channel}} / {{outcome}}" }}'
+            - id: 14
+              title: Provider failure ratio
+              description: Retryable and permanent failures among completed provider attempts.
+              type: timeseries
+              gridPos: {x: 12, y: 46, w: 12, h: 8}
+              fieldConfig:
+                defaults: {unit: percentunit, min: 0, max: 1}
+              targets:
+                - refId: A
+                  expr: >-
+                    (
+                      sum by (channel) (rate(exordos_notification_delivery_attempts_total{outcome=~"retryable_error|permanent_error"}[5m]))
+                      or
+                      0 * sum by (channel) (rate(exordos_notification_delivery_attempts_total{outcome="accepted"}[5m]))
+                    )
+                    /
+                    sum by (channel) (rate(exordos_notification_delivery_attempts_total{outcome=~"accepted|retryable_error|permanent_error"}[5m]))
+                  legendFormat: '{{ "{{channel}}" }}'
+
+  $notification_monitoring.imports.$grafana_instance.dashboards:
+    notification_service_binding:
+      name: "notification-service"
+      project_id: "12345678-c625-4fee-81d5-f691897b8142"
+      instance: $notification_monitoring.imports.$grafana_instance:uuid
+      folder: "Notification"
+      version_ref: $grafanaaas.types.grafana.dashboards.$notification_service:version_ref

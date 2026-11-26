@@ -1,0 +1,8 @@
+[Unit]
+Description=Collect Exordos Notification metrics
+After=network-online.target
+
+[Service]
+Type=oneshot
+ExecStart=/usr/bin/exordos-notification-metrics --config-file /etc/exordos_notification/exordos_notification.conf --config-dir /etc/exordos_notification/exordos_notification.conf.d
+TimeoutStartSec=25s

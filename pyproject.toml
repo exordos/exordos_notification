@@ -25,6 +25,8 @@ dependencies = [
     "gcl_looper>=1.2.3,<2.0.0",  # Apache-2.0
     "gcl_sdk>=3.7.5,<4.0.0",  # Apache-2.0
     "bjoern>=3.2.2",  # Apache-2.0
+    "prometheus-client>=0.22,<1.0",  # Apache-2.0
+    "psycopg>=3.3,<4.0.0",  # LGPL-3.0
     "Jinja2>=3.1.5,<4.0.0",  # Apache-2.0
     "bazooka>=1.3.0,<2.0.0",  # Apache-2.0
     "zulip>=0.9.0,<1.0.0",  # Apache-2.0
@@ -130,6 +132,7 @@ line-ending = "auto"
 where = ["."]
 
 [project.scripts]
+exordos-notification-metrics = "exordos_notification.cmd.metrics:main"
 exordos-notification-user-api = "exordos_notification.cmd.user_api:main"
 exordos-notification-builder-agent = "exordos_notification.cmd.builder_agent:main"
 exordos-notification-mail-agent = "exordos_notification.cmd.mail_agent:main"
