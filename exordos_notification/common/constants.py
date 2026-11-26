@@ -18,6 +18,8 @@ import enum
 
 
 GLOBAL_SERVICE_NAME = "exordos_notification"
+EVENTS_WAKEUP_CHANNEL = "notification_events"
+RENDERED_EVENTS_WAKEUP_CHANNEL = "notification_rendered_events"
 
 
 class AlwaysActiveStatus(str, enum.Enum):

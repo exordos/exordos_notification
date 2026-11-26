@@ -37,6 +37,12 @@ protocol, or new SDK/Core authentication implementation is required. Keep
 `client_type = async`: registration stores its event locally and the existing
 sender service delivers it asynchronously.
 
+Inside Notification, saving an event and saving the rendered deliveries each
+signal their worker through PostgreSQL `LISTEN/NOTIFY`. The signal is part of
+the existing API or builder transaction and becomes visible on commit. Both
+workers still check their queues every three seconds when idle, which covers
+missed signals and deliveries whose retry time has arrived.
+
 Existing installations must preserve the current email resources and custom
 templates until their element ownership and imports have been migrated. Do not
 install a second copy of the same event type or remove a working SMTP relay to

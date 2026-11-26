@@ -77,6 +77,7 @@ def main():
     )
 
     service = agents.EventBuilderAgent(
+        db_url=CONF.db.connection_url,
         iam_client=iam_client,
         iter_min_period=3,
     )

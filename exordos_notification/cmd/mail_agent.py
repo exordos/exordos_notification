@@ -42,6 +42,7 @@ def main():
     engines.engine_factory.configure_postgresql_factory(CONF)
 
     service = agents.SMTPAgent(
+        db_url=CONF.db.connection_url,
         iter_min_period=3,
     )
 

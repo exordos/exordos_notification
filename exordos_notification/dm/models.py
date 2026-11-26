@@ -943,6 +943,10 @@ class StatusMixin(models.Model):
         self.errors = []
 
 
+def _notify_queue(session, channel):
+    session.execute("SELECT pg_notify(%s, '')", (channel,))
+
+
 class Event(
     models.ModelWithUUID,
     models.ModelWithNameDesc,
@@ -970,6 +974,10 @@ class Event(
         EventType,
         required=True,
     )
+
+    def enqueue(self, session):
+        self.insert(session=session)
+        _notify_queue(session, c.EVENTS_WAKEUP_CHANNEL)
 
     def get_context(self, iam_client, templates=None):
         templates = self.get_templates() if templates is None else templates
@@ -1140,15 +1148,18 @@ class UnprocessedEvent(
         required=True,
     )
 
-    def process_event(self, iam_client):
+    def process_event(self, iam_client, session):
         try:
             rendered_events = self.event.render(iam_client)
         except Exception as e:
             LOG.exception("Failed to render event")
             self.event.set_error_status(e)
-            return
+            return True
         for rendered_event in rendered_events:
-            rendered_event.insert()
+            rendered_event.insert(session=session)
+        if rendered_events:
+            _notify_queue(session, c.RENDERED_EVENTS_WAKEUP_CHANNEL)
+        return bool(rendered_events)
 
 
 class IncorrectStatuses(
