@@ -58,12 +58,14 @@ cd "$GC_PATH"
 uv sync
 
 # Create links to venv
+sudo ln -sf "$VENV_PATH/bin/exordos-notification-metrics" "/usr/bin/exordos-notification-metrics"
 sudo ln -sf "$VENV_PATH/bin/exordos-notification-mail-agent" "/usr/bin/exordos-notification-mail-agent"
 sudo ln -sf "$VENV_PATH/bin/exordos-notification-builder-agent" "/usr/bin/exordos-notification-builder-agent"
 sudo ln -sf "$VENV_PATH/bin/exordos-notification-user-api" "/usr/bin/exordos-notification-user-api"
 sudo ln -sf "$VENV_PATH/bin/exordos-universal-agent-db-back" "/usr/bin/exordos-universal-agent-db-back"
 
 # Install Systemd service files
+sudo cp "$GC_PATH/etc/systemd/exordos-notification-metrics."{service,timer} "$SYSTEMD_SERVICE_DIR"
 sudo cp "$GC_PATH/etc/systemd/exordos-notification-mail-agent.service" $SYSTEMD_SERVICE_DIR
 sudo cp "$GC_PATH/etc/systemd/exordos-notification-builder-agent.service" $SYSTEMD_SERVICE_DIR
 sudo cp "$GC_PATH/etc/systemd/exordos-notification-user-api.service" $SYSTEMD_SERVICE_DIR

@@ -18,9 +18,11 @@ import datetime
 import logging
 
 from gcl_looper.services import basic
+import prometheus_client
 from restalchemy.common import contexts
 from restalchemy.dm import filters
 
+from exordos_notification.common import monitoring
 from exordos_notification.dm import models
 
 
@@ -31,6 +33,13 @@ class EventBuilderAgent(basic.BasicService):
     def __init__(self, iam_client, butch_size=100, **kwargs):
         self._iam_client = iam_client
         self._butch_size = butch_size
+        self._metrics = monitoring.WorkerMetrics("builder", monitoring.BUILDER)
+        self._render_attempts = prometheus_client.Counter(
+            "exordos_notification_render_attempts_total",
+            "Builder attempts to render an event",
+            ("outcome",),
+            registry=self._metrics.registry,
+        )
         super().__init__(**kwargs)
 
     def _setup(self):
@@ -45,8 +54,15 @@ class EventBuilderAgent(basic.BasicService):
             },
             limit=self._butch_size,
         )
+        enabled = monitoring.ENABLED.is_file()
         for e in unprocessed_events:
-            e.process_event(iam_client=self._iam_client)
+            count = e.process_event(iam_client=self._iam_client)
+            if enabled:
+                if count is None:
+                    result = "error"
+                else:
+                    result = "rendered" if count else "no_template"
+                self._render_attempts.labels(result).inc()
 
     def _sync_event_statuses(self):
         for item in models.IncorrectStatuses.objects.get_all(
@@ -87,3 +103,4 @@ class EventBuilderAgent(basic.BasicService):
             self._process_unprocessed_events()
             self._sync_event_statuses()
             self._cleanup()
+        self._metrics.cycle_completed()

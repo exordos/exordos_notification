@@ -36,6 +36,7 @@ build:
   elements:
     - manifest: manifests/notification_api_https.yaml.j2
     - manifest: manifests/notification_email.yaml.j2
+    - manifest: manifests/notification_monitoring.yaml.j2
     - manifest: manifests/notification_pg_backup.yaml.j2
     - manifest: manifests/notification_pg_restore.yaml.j2
 
