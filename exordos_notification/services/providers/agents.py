@@ -17,26 +17,28 @@
 import datetime
 import logging
 
-from gcl_looper.services import basic
 from restalchemy.common import contexts
 from restalchemy.dm import filters
 
+from exordos_notification.common import constants
 from exordos_notification.dm import models
+from exordos_notification.services import queue_agent
 
 
 LOG = logging.getLogger(__name__)
 
 
-class SMTPAgent(basic.BasicService):
+class SMTPAgent(queue_agent.QueueAgent):
     def __init__(self, butch_size=100, iter_min_period=5, **kwargs):
         self._butch_size = butch_size
-        super().__init__(iter_min_period=iter_min_period, **kwargs)
-
-    def _setup(self):
-        pass
+        super().__init__(
+            channel=constants.RENDERED_EVENTS_WAKEUP_CHANNEL,
+            iter_min_period=iter_min_period,
+            **kwargs,
+        )
 
     def _process_events(self):
-        for event in models.RenderedEvent.objects.get_all(
+        events = models.RenderedEvent.objects.get_all(
             filters={
                 "status": filters.NE(models.RenderedEvent.STATUS.ACTIVE.value),
                 "next_retry_at": filters.LT(
@@ -44,11 +46,13 @@ class SMTPAgent(basic.BasicService):
                 ),
             },
             limit=self._butch_size,
-        ):
+        )
+        for event in events:
             LOG.info("Processing event: %s", event)
             event.send()
+        return len(events) == self._butch_size
 
-    def _iteration(self):
+    def _process_batch(self):
         ctx = contexts.Context()
         with ctx.session_manager():
-            self._process_events()
+            return self._process_events()

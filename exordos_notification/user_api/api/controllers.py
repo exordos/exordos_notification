@@ -114,7 +114,7 @@ class EventController(ra_controllers.BaseResourceController):
     def create(self, **kwargs):
         event = self.model(**kwargs)
         self._authorize(event, "create")
-        event.insert()
+        event.enqueue(self.get_context().get_session())
         return event
 
     def get(self, uuid, **kwargs):

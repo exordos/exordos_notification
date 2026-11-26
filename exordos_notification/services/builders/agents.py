@@ -17,26 +17,24 @@
 import datetime
 import logging
 
-from gcl_looper.services import basic
 from restalchemy.common import contexts
 from restalchemy.dm import filters
 
+from exordos_notification.common import constants
 from exordos_notification.dm import models
+from exordos_notification.services import queue_agent
 
 
 LOG = logging.getLogger(__name__)
 
 
-class EventBuilderAgent(basic.BasicService):
+class EventBuilderAgent(queue_agent.QueueAgent):
     def __init__(self, iam_client, butch_size=100, **kwargs):
         self._iam_client = iam_client
         self._butch_size = butch_size
-        super().__init__(**kwargs)
+        super().__init__(channel=constants.EVENTS_WAKEUP_CHANNEL, **kwargs)
 
-    def _setup(self):
-        pass
-
-    def _process_unprocessed_events(self):
+    def _process_unprocessed_events(self, session):
         unprocessed_events = models.UnprocessedEvent.objects.get_all(
             filters={
                 "next_retry_at": filters.LT(
@@ -45,8 +43,11 @@ class EventBuilderAgent(basic.BasicService):
             },
             limit=self._butch_size,
         )
-        for e in unprocessed_events:
-            e.process_event(iam_client=self._iam_client)
+        progressed = False
+        for event in unprocessed_events:
+            if event.process_event(iam_client=self._iam_client, session=session):
+                progressed = True
+        return len(unprocessed_events) == self._butch_size and progressed
 
     def _sync_event_statuses(self):
         for item in models.IncorrectStatuses.objects.get_all(
@@ -81,9 +82,10 @@ class EventBuilderAgent(basic.BasicService):
             LOG.info("Cleaning up event: %s", event.uuid)
             event.delete()
 
-    def _iteration(self):
+    def _process_batch(self):
         ctx = contexts.Context()
-        with ctx.session_manager():
-            self._process_unprocessed_events()
+        with ctx.session_manager() as session:
+            has_more = self._process_unprocessed_events(session)
             self._sync_event_statuses()
             self._cleanup()
+        return has_more
