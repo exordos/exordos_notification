@@ -40,6 +40,7 @@ from restalchemy.dm import types_dynamic
 from restalchemy.storage.sql import orm
 import zulip
 
+from exordos_notification.clients import workspace
 from exordos_notification.common import apns
 from exordos_notification.common import constants as c
 from exordos_notification.common import transports
@@ -174,6 +175,30 @@ class ZulipProtocol(types_dynamic.AbstractKindModel):
         result = client.send_message(request)
         if result["result"] != "success":
             raise RuntimeError(f"Failed to send message: {result['msg']}")
+
+
+class WorkspaceProtocol(types_dynamic.AbstractKindModel):
+    KIND = "workspace"
+
+    def send(
+        self,
+        content: "AbstractContent",
+        *,
+        project_id: sys_uuid.UUID | None,
+        provider_uuid: sys_uuid.UUID,
+    ) -> None:
+        client = workspace.WorkspaceClient(project_id, provider_uuid)
+        if isinstance(content, RenderedWorkspaceDirectMessageContent):
+            stream_uuid, topic_uuid = client.direct_topic(content.user_uuid)
+        elif isinstance(content, RenderedWorkspaceStreamMessageContent):
+            stream_uuid, topic_uuid = content.stream_uuid, content.topic_uuid
+        else:
+            raise transports.DeliveryError(
+                "workspace_unsupported_content", permanent=True
+            )
+        client.send_message(
+            content.message_uuid, stream_uuid, topic_uuid, content.content
+        )
 
 
 class FirebaseProtocol(types_dynamic.AbstractKindModel):
@@ -435,6 +460,7 @@ class Provider(
             types_dynamic.KindModelType(SimpleSmtpProtocol),
             types_dynamic.KindModelType(StartTlsSmtpProtocol),
             types_dynamic.KindModelType(ZulipProtocol),
+            types_dynamic.KindModelType(WorkspaceProtocol),
             types_dynamic.KindModelType(FirebaseProtocol),
             types_dynamic.KindModelType(ApnsProtocol),
             types_dynamic.KindModelType(NotificationRelayProtocol),
@@ -443,6 +469,10 @@ class Provider(
     )
 
     def send(self, content, user_context):
+        if isinstance(self.protocol, WorkspaceProtocol):
+            return self.protocol.send(
+                content=content, project_id=self.project_id, provider_uuid=self.uuid
+            )
         if isinstance(self.protocol, FirebaseProtocol):
             self.protocol.validate_content(content)
             firebase = self.protocol.get_session(content)
@@ -633,6 +663,73 @@ ZULIP_MESSAGE_TYPE_MAP = {
 }
 
 
+class WorkspaceMessageContent(AbstractContent):
+    requires_user_context = False
+    content = properties.property(
+        types.String(min_length=1, max_length=40000),
+        default="{{ message }}",
+    )
+
+    @staticmethod
+    def render_field(template: str, params: dict) -> str:
+        return jinja2.Template(template, undefined=jinja2.StrictUndefined).render(
+            **params
+        )
+
+
+class RenderedWorkspaceMessageContent(AbstractContent):
+    requires_user_context = False
+    message_uuid = properties.property(types.UUID(), required=True)
+    content = properties.property(
+        types.String(min_length=1, max_length=40000), required=True
+    )
+
+
+class RenderedWorkspaceStreamMessageContent(RenderedWorkspaceMessageContent):
+    KIND = "rendered_workspace_stream_message"
+
+    stream_uuid = properties.property(types.UUID(), required=True)
+    topic_uuid = properties.property(types.UUID(), required=True)
+
+
+class WorkspaceStreamMessageContent(WorkspaceMessageContent):
+    KIND = "workspace_stream_message"
+
+    stream_uuid = properties.property(types.String(), default="{{ stream_uuid }}")
+    topic_uuid = properties.property(types.String(), default="{{ topic_uuid }}")
+
+    def render(
+        self, params: dict, *, message_uuid: sys_uuid.UUID
+    ) -> RenderedWorkspaceStreamMessageContent:
+        return RenderedWorkspaceStreamMessageContent(
+            message_uuid=message_uuid,
+            stream_uuid=sys_uuid.UUID(self.render_field(self.stream_uuid, params)),
+            topic_uuid=sys_uuid.UUID(self.render_field(self.topic_uuid, params)),
+            content=self.render_field(self.content, params),
+        )
+
+
+class RenderedWorkspaceDirectMessageContent(RenderedWorkspaceMessageContent):
+    KIND = "rendered_workspace_direct_message"
+
+    user_uuid = properties.property(types.UUID(), required=True)
+
+
+class WorkspaceDirectMessageContent(WorkspaceMessageContent):
+    KIND = "workspace_direct_message"
+
+    user_uuid = properties.property(types.String(), default="{{ user_uuid }}")
+
+    def render(
+        self, params: dict, *, message_uuid: sys_uuid.UUID
+    ) -> RenderedWorkspaceDirectMessageContent:
+        return RenderedWorkspaceDirectMessageContent(
+            message_uuid=message_uuid,
+            user_uuid=sys_uuid.UUID(self.render_field(self.user_uuid, params)),
+            content=self.render_field(self.content, params),
+        )
+
+
 class RenderedFirebaseAndroidContent(AbstractContent):
     KIND = "rendered_firebase_android"
     requires_user_context = False
@@ -777,6 +874,8 @@ class Template(
             types_dynamic.KindModelType(EmailContent),
             types_dynamic.KindModelType(ZulipStreamMessageContent),
             types_dynamic.KindModelType(ZulipDirectMessageContent),
+            types_dynamic.KindModelType(WorkspaceStreamMessageContent),
+            types_dynamic.KindModelType(WorkspaceDirectMessageContent),
             types_dynamic.KindModelType(FirebaseAndroidContent),
             types_dynamic.KindModelType(ApnsContent),
             types_dynamic.KindModelType(NotificationRelayContent),
@@ -985,11 +1084,13 @@ class Event(
         for template in templates:
             params = context.copy()
             params.update(self.event_params)
-            render_options = (
-                {"event": self}
-                if isinstance(template.content, (NotificationRelayContent, ApnsContent))
-                else {}
-            )
+            render_options = {}
+            if isinstance(template.content, (NotificationRelayContent, ApnsContent)):
+                render_options["event"] = self
+            elif isinstance(template.content, WorkspaceMessageContent):
+                render_options["message_uuid"] = sys_uuid.uuid5(
+                    self.uuid, str(template.uuid)
+                )
             rendered_content = template.content.render(params, **render_options)
             rendered_events.append(
                 RenderedEvent(
@@ -1062,6 +1163,8 @@ class RenderedEvent(
             types_dynamic.KindModelType(RenderedEmailContent),
             types_dynamic.KindModelType(RenderedStreamMessageContent),
             types_dynamic.KindModelType(RenderedDirectMessageContent),
+            types_dynamic.KindModelType(RenderedWorkspaceStreamMessageContent),
+            types_dynamic.KindModelType(RenderedWorkspaceDirectMessageContent),
             types_dynamic.KindModelType(RenderedFirebaseAndroidContent),
             types_dynamic.KindModelType(RenderedApnsContent),
             types_dynamic.KindModelType(RenderedNotificationRelayContent),
